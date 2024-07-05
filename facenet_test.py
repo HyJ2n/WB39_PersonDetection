@@ -1,5 +1,4 @@
-#multiple faces detection and print similarity above the bouding box
-
+# enhanced process for gpt at the test3.py code
 from facenet_pytorch import MTCNN, InceptionResnetV1
 import cv2
 import numpy as np
@@ -39,7 +38,6 @@ def extract_embeddings(image):
         return embeddings
     return None
 
-
 # Function to compare similarity between two sets of embeddings
 def compare_similarity(embeddings1, embeddings2):
     if embeddings1 is not None and embeddings2 is not None:
@@ -75,13 +73,11 @@ while True:
         boxes, _ = mtcnn.detect(frame_rgb)
         if boxes is not None:
             for i, box in enumerate(boxes):
-                # Assuming boxes and similarity_scores are aligned properly
-                for i in range(min(len(boxes), len(similarity_scores))):
-                    box = boxes[i]
-                    # Draw bounding box
-                    cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (255, 0, 0), 2)
-
-                    # Display similarity score above bounding box
+                # Draw bounding box
+                cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (255, 0, 0), 2)
+                
+                # Display similarity score above bounding box
+                if similarity_scores is not None and i < len(similarity_scores):
                     score_text = f"Similarity: {similarity_scores[i][0]:.2f}"
                     cv2.putText(frame, score_text, (int(box[0]), int(box[1]) - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
