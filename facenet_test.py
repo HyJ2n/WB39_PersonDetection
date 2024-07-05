@@ -1,21 +1,22 @@
-#multiple faces detection and print similarity
+#multiple faces detection and print similarity above the bouding box
 
 from facenet_pytorch import MTCNN, InceptionResnetV1
 import cv2
-from PIL import Image, ImageDraw
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
 
 # Initialize MTCNN for face detection
-mtcnn = MTCNN(select_largest=False, device='cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+mtcnn = MTCNN(keep_all=True, device=device)
 
 # Initialize InceptionResnetV1 for face recognition
-resnet = InceptionResnetV1(pretrained='vggface2').eval().to('cuda')
+resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
 
 # Load a reference image for comparison
 reference_image_path = './test/horyun.jpg'
-reference_image = Image.open(reference_image_path).convert('RGB')
+reference_image = cv2.imread(reference_image_path)
+reference_image = cv2.cvtColor(reference_image, cv2.COLOR_BGR2RGB)  # Convert to RGB
 
 # Function to extract embeddings from an image
 def extract_embeddings(image):
@@ -23,32 +24,31 @@ def extract_embeddings(image):
     if boxes is not None:
         embeddings = []
         for box in boxes:
-            # Ensure box coordinates are integers
+            # Convert box from [x1, y1, x2, y2] to (left, top, width, height)
             box = [int(coord) for coord in box]
+            face = image[box[1]:box[3], box[0]:box[2]]
             
-            # Crop face from image
-            face = image.crop(box)
+            # Check if face image is empty (this check can be added)
+            if face.size == 0:
+                continue
             
-            # Convert PIL Image to tensor
-            face = face.resize((160, 160), Image.BILINEAR)
-            face_tensor = torch.tensor(np.array(face)).permute(2, 0, 1).unsqueeze(0).float().to(device='cuda') / 255.0
-            embedding = resnet(face_tensor).detach().cpu().numpy().flatten()
+            face = cv2.resize(face, (160, 160))
+            face = torch.tensor(face).unsqueeze(0).permute(0, 3, 1, 2).float().to(device) / 255.0
+            embedding = resnet(face).detach().cpu().numpy().flatten()
             embeddings.append(embedding)
-        
         return embeddings
-    
     return None
+
 
 # Function to compare similarity between two sets of embeddings
 def compare_similarity(embeddings1, embeddings2):
     if embeddings1 is not None and embeddings2 is not None:
         similarities = cosine_similarity(embeddings1, embeddings2)
         return similarities
-    
     return None
 
 # Load a video file
-video_path = r"C:\Users\user\Desktop\사진\KakaoTalk_20240624_153034158.mp4"
+video_path = "./test/testVideo.mp4"
 v_cap = cv2.VideoCapture(video_path)
 
 while True:
@@ -60,31 +60,34 @@ while True:
     # Convert frame to RGB (MTCNN expects RGB image)
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     
-    # Convert frame to PIL Image
-    frame_pil = Image.fromarray(frame_rgb)
-    
     # Detect faces and extract embeddings
-    forward_embeddings = extract_embeddings(frame_pil)
+    forward_embeddings = extract_embeddings(frame_rgb)
     reference_embeddings = extract_embeddings(reference_image)
     
     # Compare similarity
+    similarity_scores = None
     if forward_embeddings is not None and reference_embeddings is not None:
         similarity_scores = compare_similarity(forward_embeddings, reference_embeddings)
         print(f"Similarity Scores: {similarity_scores}")
     
-    # Draw bounding boxes on the frame
+    # Draw bounding boxes on the frame and display similarity scores
     if forward_embeddings is not None:
-        draw = ImageDraw.Draw(frame_pil)
-        boxes, _ = mtcnn.detect(frame_pil)
+        boxes, _ = mtcnn.detect(frame_rgb)
         if boxes is not None:
-            for box in boxes:
-                draw.rectangle(box.tolist(), outline=(255, 0, 0), width=2)
+            for i, box in enumerate(boxes):
+                # Assuming boxes and similarity_scores are aligned properly
+                for i in range(min(len(boxes), len(similarity_scores))):
+                    box = boxes[i]
+                    # Draw bounding box
+                    cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (255, 0, 0), 2)
+
+                    # Display similarity score above bounding box
+                    score_text = f"Similarity: {similarity_scores[i][0]:.2f}"
+                    cv2.putText(frame, score_text, (int(box[0]), int(box[1]) - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
     
-    # Convert PIL Image back to numpy array for displaying with cv2
-    frame_with_boxes = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
-    
-    # Display the frame with bounding boxes
-    cv2.imshow('Frame with Bounding Boxes', frame_with_boxes)
+    # Display the frame with bounding boxes and similarity scores
+    cv2.imshow('Frame with Bounding Boxes', frame)
     
     # Press 'q' to exit
     if cv2.waitKey(1) & 0xFF == ord('q'):
