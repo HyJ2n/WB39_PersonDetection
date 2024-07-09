@@ -37,7 +37,7 @@ class FaceRecognizer:
     def compare_similarity(embedding1, embedding2):
         return np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
 
-    def recognize_faces(self, frame, frame_number, output_dir, video_name):
+    def recognize_faces(self, frame, frame_number, output_dir, video_name, gender_model):
         original_shape = frame.shape[:2]
         frame_resized = cv2.resize(frame, (640, 480))
         frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
@@ -70,6 +70,13 @@ class FaceRecognizer:
                 box[3] = int(box[3] * scale_y)
                 cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 2)
 
+                # Get gender prediction
+                gender = predict_gender(face_image, gender_model)
+
+                # Draw gender text below the bounding box
+                gender_text = f"Gender: {gender}"
+                cv2.putText(frame, gender_text, (box[0], box[3] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
                 # Draw ID text above the bounding box
                 id_text = f"ID: {self.person_id}"
                 cv2.putText(frame, id_text, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
@@ -77,11 +84,26 @@ class FaceRecognizer:
         return frame
 
 
-def process_video(video_path, output_dir):
+def predict_gender(face_image, gender_model):
+    face_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
+    results = gender_model.predict(source=[face_rgb], save=False)
+    genders = {0: "Male", 1: "Female"}
+    gender_id = results[0].boxes.data[0][5].item()
+    return genders.get(gender_id, "Unknown")
+
+
+def process_video(video_path, output_dir, yolo_model_path, gender_model_path, target_fps=10):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     recognizer = FaceRecognizer()
 
     v_cap = cv2.VideoCapture(video_path)
+    frame_rate = int(v_cap.get(cv2.CAP_PROP_FPS))
+    frame_interval = frame_rate // target_fps
+    frame_width, frame_height = None, None
+    video_writer = None
+
+    yolo_model = YOLO(yolo_model_path)
+    gender_model = YOLO(gender_model_path)
     frame_number = 0
 
     while True:
@@ -90,7 +112,17 @@ def process_video(video_path, output_dir):
             break
         frame_number += 1
 
-        frame = recognizer.recognize_faces(frame, frame_number, output_dir, video_name)
+        if frame_number % frame_interval != 0:
+            continue
+
+        frame = recognizer.recognize_faces(frame, frame_number, output_dir, video_name, gender_model)
+
+        if frame_width is None or frame_height is None:
+            frame_height, frame_width = frame.shape[:2]
+            output_video_path = os.path.join(output_dir, f"{video_name}_output.mp4")
+            video_writer = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), target_fps, (frame_width, frame_height))
+
+        video_writer.write(frame)
 
         cv2.imshow('Frame', frame)
 
@@ -98,17 +130,16 @@ def process_video(video_path, output_dir):
             break
 
     v_cap.release()
+    if video_writer:
+        video_writer.release()
     cv2.destroyAllWindows()
 
 
-if __name__ == "__main__":
-    video_paths = ["./test/testVideo.mp4", "./test/testVideo2.mp4"]
-    output_directory = "./output/"
-
+def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path, target_fps=10):
     # Process each video in parallel using separate processes
     processes = []
     for video_path in video_paths:
-        p = Process(target=process_video, args=(video_path, output_directory))
+        p = Process(target=process_video, args=(video_path, output_dir, yolo_model_path, gender_model_path, target_fps))
         p.start()
         processes.append(p)
 
@@ -116,3 +147,11 @@ if __name__ == "__main__":
     for p in processes:
         p.join()
 
+
+if __name__ == "__main__":
+    video_paths = ["./test/testVideo1.mp4", "./test/testVideo2.mp4"]
+    output_directory = "./output/"
+    yolo_model_path = './models/yolov8x.pt'
+    gender_model_path = './models/gender_model.pt'
+
+    process_videos(video_paths, output_directory, yolo_model_path, gender_model_path)
