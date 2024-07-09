@@ -309,11 +309,11 @@ if __name__ == "__main__":
     known_face_paths = [
         "./test/horyun.jpg"
     ]
-    yolo_model_path = './model/yolov8x.pt'
-    gender_model_path = './model/gender_model.pt'  # 성별 예측 모델 경로
-    age_model_path = './model/age_best.pth'
-    color_model_path = './model/color_model.pt'
-    clothes_model_path = './model/clothes_class.pt'
+    yolo_model_path = './models/yolov8x.pt'
+    gender_model_path = './models/gender_model.pt'  # 성별 예측 모델 경로
+    age_model_path = './models/age_best.pth'
+    color_model_path = './models/color_model.pt'
+    clothes_model_path = './models/clothes_class.pt'
 
     process_video(video_path, output_directory, known_face_paths, yolo_model_path, gender_model_path,age_model_path,color_model_path,clothes_model_path ,
                   predict_gender_flag=True,predict_age_flag=True, predict_clothes_flag=True, predict_color_flag=True)

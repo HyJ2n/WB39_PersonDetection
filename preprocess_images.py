@@ -34,7 +34,7 @@ def extract_faces(train_path):
 
 def preprocess_images(train_path):
     # 캐시 파일 경로 설정
-    cache_file = r"C:\Users\admin\Desktop\models\preprocessed_data.pkl"
+    cache_file = r"C:\Users\admin\Desktop\Project\Test\Face_Gender\models\preprocessed_data.pkl"
     
     # 이미 캐시 파일이 있는지 확인하고 로드
     if os.path.exists(cache_file):
