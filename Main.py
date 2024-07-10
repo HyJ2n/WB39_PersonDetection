@@ -60,22 +60,6 @@ class FaceRecognizer:
                     self.persons.append({'id': person_id, 'embedding': embedding})
                     self.age_predictions[person_id] = {'frames': [], 'age': None}  # 새로운 사람을 인식할 때 나이 예측 결과 초기화
 
-                output_folder = os.path.join(output_dir, f'{video_name}_face')
-                os.makedirs(output_folder, exist_ok=True)
-                output_path = os.path.join(output_folder, f'person_{person_id}_frame_{frame_number}.jpg')
-                cv2.imwrite(output_path, cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
-                print(f"Saved image: {output_path}, person ID: {person_id}, detection probability: {prob}")
-
-                # Draw bounding box
-                scale_x = original_shape[1] / 640
-                scale_y = original_shape[0] / 480
-                box = [int(coord) for coord in box]
-                box[0] = int(box[0] * scale_x)
-                box[1] = int(box[1] * scale_y)
-                box[2] = int(box[2] * scale_x)
-                box[3] = int(box[3] * scale_y)
-                cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 2)
-
                 # Get gender prediction
                 gender = predict_gender(face_image, gender_model)
 
@@ -89,17 +73,33 @@ class FaceRecognizer:
                         self.age_predictions[person_id]['age'] = most_common_age
                     age = self.age_predictions[person_id]['age']
 
+                output_folder = os.path.join(output_dir, f'{video_name}_face')
+                os.makedirs(output_folder, exist_ok=True)
+                output_path = os.path.join(output_folder, f'person_{person_id}_frame_{frame_number}_gender_{gender}_age_{age}.jpg')
+                cv2.imwrite(output_path, cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
+                print(f"Saved image: {output_path}, person ID: {person_id}, detection probability: {prob}")
+
+                # Draw bounding box
+                scale_x = original_shape[1] / 640
+                scale_y = original_shape[0] / 480
+                box = [int(coord) for coord in box]
+                box[0] = int(box[0] * scale_x)
+                box[1] = int(box[1] * scale_y)
+                box[2] = int(box[2] * scale_x)
+                box[3] = int(box[3] * scale_y)
+                cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 2)
+
                 # Draw gender text below the bounding box
-                gender_text = f"Gender: {gender}"
-                cv2.putText(frame, gender_text, (box[0], box[3] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                #gender_text = f"Gender: {gender}"
+                #cv2.putText(frame, gender_text, (box[0], box[3] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
                 # Draw age text below the bounding box
-                age_text = f"Age: {age}"
-                cv2.putText(frame, age_text, (box[0], box[3] + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                #age_text = f"Age: {age}"
+                #cv2.putText(frame, age_text, (box[0], box[3] + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
                 # Draw ID text above the bounding box
-                id_text = f"ID: {person_id}"
-                cv2.putText(frame, id_text, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                #id_text = f"ID: {person_id}"
+                #cv2.putText(frame, id_text, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
         return frame
 
