@@ -7,6 +7,7 @@ from ultralytics import YOLO
 from datetime import datetime, timedelta
 from age_model import ResNetAgeModel, ageDataset, device, test_transform, CFG
 from PIL import Image
+from collections import Counter
 
 class FaceRecognizer:
     def __init__(self, device=None):
@@ -15,6 +16,7 @@ class FaceRecognizer:
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
         self.persons = []
         self.person_id = 0
+        self.age_predictions = {}  # 나이 예측 결과를 저장할 딕셔너리 초기화
 
     def extract_embeddings(self, image):
         boxes, probs = self.mtcnn.detect(image)
@@ -39,7 +41,7 @@ class FaceRecognizer:
     def compare_similarity(embedding1, embedding2):
         return np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
 
-    def recognize_faces(self, frame, frame_number, output_dir, video_name, gender_model,age_model):
+    def recognize_faces(self, frame, frame_number, output_dir, video_name, gender_model, age_model):
         original_shape = frame.shape[:2]
         frame_resized = cv2.resize(frame, (640, 480))
         frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
@@ -50,17 +52,19 @@ class FaceRecognizer:
                 matched = False
                 for person in self.persons:
                     if self.compare_similarity(embedding, person['embedding']) > 0.7:
-                        self.person_id = person['id']
+                        person_id = person['id']
                         matched = True
                         break
                 if not matched:
-                    self.person_id = len(self.persons) + 1
-                    self.persons.append({'id': self.person_id, 'embedding': embedding})
+                    person_id = len(self.persons) + 1
+                    self.persons.append({'id': person_id, 'embedding': embedding})
+                    self.age_predictions[person_id] = {'frames': [], 'age': None}  # 새로운 사람을 인식할 때 나이 예측 결과 초기화
+
                 output_folder = os.path.join(output_dir, f'{video_name}_face')
                 os.makedirs(output_folder, exist_ok=True)
-                output_path = os.path.join(output_folder, f'person_{self.person_id}_frame_{frame_number}.jpg')
+                output_path = os.path.join(output_folder, f'person_{person_id}_frame_{frame_number}.jpg')
                 cv2.imwrite(output_path, cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
-                print(f"Saved image: {output_path}, person ID: {self.person_id}, detection probability: {prob}")
+                print(f"Saved image: {output_path}, person ID: {person_id}, detection probability: {prob}")
 
                 # Draw bounding box
                 scale_x = original_shape[1] / 640
@@ -75,17 +79,26 @@ class FaceRecognizer:
                 # Get gender prediction
                 gender = predict_gender(face_image, gender_model)
 
-                age = predict_age(face_image,age_model)
+                # Get age prediction
+                if len(self.age_predictions[person_id]['frames']) < 10:
+                    age = predict_age(face_image, age_model)
+                    self.age_predictions[person_id]['frames'].append(age)
+                else:
+                    if self.age_predictions[person_id]['age'] is None:
+                        most_common_age = Counter(self.age_predictions[person_id]['frames']).most_common(1)[0][0]
+                        self.age_predictions[person_id]['age'] = most_common_age
+                    age = self.age_predictions[person_id]['age']
 
                 # Draw gender text below the bounding box
-                gender_text = f" Gender: {gender}"
+                gender_text = f"Gender: {gender}"
                 cv2.putText(frame, gender_text, (box[0], box[3] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
-                age_text = f" Age: {age}"
+                # Draw age text below the bounding box
+                age_text = f"Age: {age}"
                 cv2.putText(frame, age_text, (box[0], box[3] + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
                 # Draw ID text above the bounding box
-                id_text = f"ID: {self.person_id}"
+                id_text = f"ID: {person_id}"
                 cv2.putText(frame, id_text, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
         return frame
@@ -100,7 +113,6 @@ def predict_gender(face_image, gender_model):
 
 
 def predict_age(face_image, age_model):
-     # face_image가 numpy 배열이면 PIL 이미지로 변환
     if isinstance(face_image, np.ndarray):
         face_image = Image.fromarray(face_image)
 
@@ -110,15 +122,14 @@ def predict_age(face_image, age_model):
         logit = age_model(face_tensor)
         pred = logit.argmax(dim=1, keepdim=True).cpu().numpy()
 
-    # 클래스에 따라 나이 그룹 반환
-    age_group = {0:"Child", 1:"Youth",2: "Middle",3: "Old"}
+    age_group = {0: "Child", 1: "Youth", 2: "Middle", 3: "Old"}
     if pred[0][0] < len(age_group):
         return age_group[pred[0][0]]
     else:
         return "Unknown"
 
 
-def process_video(video_path, output_dir, yolo_model_path, gender_model_path,age_model_path, target_fps=10):
+def process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     recognizer = FaceRecognizer()
 
@@ -134,7 +145,7 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path,age
     age_model.load_state_dict(torch.load(age_model_path))
     age_model = age_model.to(device)
     age_model.eval()
-    
+
     frame_number = 0
 
     while True:
@@ -146,7 +157,7 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path,age
         if frame_number % frame_interval != 0:
             continue
 
-        frame = recognizer.recognize_faces(frame, frame_number, output_dir, video_name, gender_model,age_model)
+        frame = recognizer.recognize_faces(frame, frame_number, output_dir, video_name, gender_model, age_model)
 
         if frame_width is None or frame_height is None:
             frame_height, frame_width = frame.shape[:2]
@@ -165,19 +176,9 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path,age
         video_writer.release()
     cv2.destroyAllWindows()
 
-
-def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path,age_model_path, target_fps=10):
+def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10):
     for video_path in video_paths:
-        process_video(video_path, output_dir, yolo_model_path, gender_model_path,age_model_path, target_fps)
-
-def get_video_start_time(index):
-    start_times = [
-        datetime(2024, 7, 4, 10, 2, 0),
-        datetime(2024, 7, 4, 10, 1, 0),
-        datetime(2024, 7, 4, 10, 0, 30)
-    ]
-    return start_times[index]
-
+        process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps)
 
 if __name__ == "__main__":
     video_paths = ["./test/testVideo1.mp4", "./test/testVideo2.mp4"]
