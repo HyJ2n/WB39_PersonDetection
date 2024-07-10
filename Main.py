@@ -186,7 +186,6 @@ if __name__ == "__main__":
     yolo_model_path = './models/yolov8x.pt'
     gender_model_path = './models/gender_model.pt'
     age_model_path = './models/age_model.pth'
-    color_model_path = './models/color_model.pt'
 
 
     process_videos(video_paths, output_directory, yolo_model_path, gender_model_path,age_model_path)
