@@ -20,6 +20,45 @@ class FaceRecognizer:
         self.person_id = 0
         self.age_predictions = defaultdict(lambda: {'frames': [], 'age': None})  # 나이 예측 결과를 저장할 딕셔너리 초기화
 
+
+    # 예측===================================================================
+
+    def predict_gender(self,face_image, gender_model):
+        face_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
+        results = gender_model.predict(source=[face_rgb], save=False)
+        genders = {0: "Male", 1: "Female"}
+        gender_id = results[0].boxes.data[0][5].item()
+        return genders.get(gender_id, "Unknown")
+
+
+    def predict_age(self,face_image, age_model):
+        if isinstance(face_image, np.ndarray):
+            face_image = Image.fromarray(face_image)
+
+        face_tensor = test_transform(face_image).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            logit = age_model(face_tensor)
+            pred = logit.argmax(dim=1, keepdim=True).cpu().numpy()
+
+        age_group = {0: "Child", 1: "Youth", 2: "Middle", 3: "Old"}
+        if pred[0][0] < len(age_group):
+            return age_group[pred[0][0]]
+        else:
+            return "Unknown"
+        
+    # ========================================================================
+
+    def detect_persons(self ,frame, yolo_model):
+        yolo_results = yolo_model.predict(source=[frame], save=False)[0]
+        person_detections = [
+            (int(data[0]), int(data[1]), int(data[2]), int(data[3]))
+            for data in yolo_results.boxes.data.tolist()
+            if float(data[4]) >= 0.85 and int(data[5]) == 0
+        ]
+        return person_detections
+
+
     def extract_embeddings(self, image):
         boxes, probs = self.mtcnn.detect(image)
         if boxes is not None:
@@ -58,43 +97,36 @@ class FaceRecognizer:
         
         return known_faces
     
-    def predict_gender(self,face_image, gender_model):
-        face_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-        results = gender_model.predict(source=[face_rgb], save=False)
-        genders = {0: "Male", 1: "Female"}
-        gender_id = results[0].boxes.data[0][5].item()
-        return genders.get(gender_id, "Unknown")
 
-
-    def predict_age(self,face_image, age_model):
-        if isinstance(face_image, np.ndarray):
-            face_image = Image.fromarray(face_image)
-
-        face_tensor = test_transform(face_image).unsqueeze(0).to(device)
-
-        with torch.no_grad():
-            logit = age_model(face_tensor)
-            pred = logit.argmax(dim=1, keepdim=True).cpu().numpy()
-
-        age_group = {0: "Child", 1: "Youth", 2: "Middle", 3: "Old"}
-        if pred[0][0] < len(age_group):
-            return age_group[pred[0][0]]
-        else:
-            return "Unknown"
-    
-
-    
     @staticmethod
     def compare_similarity(embedding1, embedding2):
         return np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2)) 
 
 
-    def recognize_faces(self, known_face, frame, frame_number, output_dir, video_name, gender_model, age_model):
+    def recognize_faces(self,tracker,yolo_model, known_face, frame, frame_number, output_dir, video_name, gender_model, age_model):
         original_shape = frame.shape[:2]
         frame_resized = cv2.resize(frame, (640, 480))
         frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
         forward_embeddings = self.extract_embeddings(frame_rgb)
+        results = []
 
+        person_detections = self.detect_persons(frame,yolo_model)
+
+        for (xmin, ymin, xmax, ymax) in person_detections:
+            width = xmax - xmin
+            height = ymax - ymin
+            results.append([[xmin, ymin, width, height], 1.0, 0])
+
+        tracks = tracker.update_tracks(results, frame=frame)
+
+        for track in tracks:
+            if not track.is_confirmed():
+                continue
+        
+            track_id = track.track_id
+            ltrb = track.to_ltrb()
+            track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
+        
         embeddings = [face[0] for face in known_face]
 
         if forward_embeddings:
@@ -103,9 +135,8 @@ class FaceRecognizer:
                 person_id = None
 
                 # known_face와 비교
-                for known_id, known_embedding in enumerate(embeddings):
-                    
-                    if self.compare_similarity(embedding, known_embedding) > 0.7:
+                for known_id, known_embedding in enumerate(embeddings):                   
+                    if self.compare_similarity(embedding, known_embedding) > 0.6:
                         person_id = known_id + 1  # ID는 1부터 시작
                         matched = True
                         break
@@ -186,7 +217,7 @@ def process_video(known_face_paths,video_path, output_dir, yolo_model_path, gend
         if frame_number % frame_interval != 0:
             continue
         
-        frame = recognizer.recognize_faces(known_face,frame, frame_number, output_dir, video_name, gender_model, age_model)
+        frame = recognizer.recognize_faces(tracker,yolo_model,known_face,frame, frame_number, output_dir, video_name, gender_model, age_model)
 
         if frame_width is None or frame_height is None:
             frame_height, frame_width = frame.shape[:2]
