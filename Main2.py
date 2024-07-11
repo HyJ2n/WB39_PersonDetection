@@ -78,6 +78,7 @@ class FaceRecognizer:
         else:
             return []  # 얼굴을 감지하지 못한 경우 빈 리스트 반환
         
+        
 
     def load_known_faces(self, image_paths):
         known_faces = []
@@ -96,6 +97,19 @@ class FaceRecognizer:
                 known_faces.append((embedding, box, face, prob))
         
         return known_faces
+    
+    def iou(self, box1, box2):
+        # box1과 box2는 [xmin, ymin, xmax, ymax] 형식
+        xA = max(box1[0], box2[0])
+        yA = max(box1[1], box2[1])
+        xB = min(box1[2], box2[2])
+        yB = min(box1[3], box2[3])
+
+        interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+        box1Area = (box1[2] - box1[0] + 1) * (box1[3] - box1[1] + 1)
+        box2Area = (box2[2] - box2[0] + 1) * (box2[3] - box2[1] + 1)
+        iou = interArea / float(box1Area + box2Area - interArea)
+        return iou
     
 
     @staticmethod
@@ -119,15 +133,8 @@ class FaceRecognizer:
 
         tracks = tracker.update_tracks(results, frame=frame)
 
-        for track in tracks:
-            if not track.is_confirmed():
-                continue
-        
-            track_id = track.track_id
-            ltrb = track.to_ltrb()
-            track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
-        
         embeddings = [face[0] for face in known_face]
+        face_to_track = {}
 
         if forward_embeddings:
             for embedding, box, face_image, prob in forward_embeddings:
@@ -137,31 +144,59 @@ class FaceRecognizer:
                 # known_face와 비교
                 for known_id, known_embedding in enumerate(embeddings):                   
                     if self.compare_similarity(embedding, known_embedding) > 0.6:
+                        print("얼굴 검출 됐습니다.")
                         person_id = known_id + 1  # ID는 1부터 시작
                         matched = True
-                        break
+                        break        
 
                 if matched:
-                    output_folder = os.path.join(output_dir, f'{video_name}_face')
-                    os.makedirs(output_folder, exist_ok=True)
-                    output_path = os.path.join(output_folder, f'person_{person_id}_frame_{frame_number}.jpg')
-                    cv2.imwrite(output_path, cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
-                    print(f"Saved image: {output_path}, person ID: {person_id}, detection probability: {prob}")
-
                     # Draw bounding box
                     scale_x = original_shape[1] / 640
                     scale_y = original_shape[0] / 480
                     box = [int(coord) for coord in box]
-                    box[0] = int(box[0] * scale_x)
-                    box[1] = int(box[1] * scale_y)
-                    box[2] = int(box[2] * scale_x)
-                    box[3] = int(box[3] * scale_y)
-                    cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 2)
+                    left = int(box[0] * scale_x)
+                    top = int(box[1] * scale_y)
+                    right = int(box[2] * scale_x)
+                    bottom = int(box[3] * scale_y)
 
-                    # Get gender prediction
+                # 트래킹된 객체와 매칭
+                    for track in tracks:
+                        if not track.is_confirmed():
+                            continue
+
+                        track_id = track.track_id
+                        ltrb = track.to_ltrb()
+                        track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
+
+                    # 얼굴 바운딩 박스가 트랙 바운딩 박스 내에 있는지 확인
+                        if person_id not in face_to_track:
+                            if left >= track_bbox[0] and right <= track_bbox[2] and top >= track_bbox[1] and bottom <= track_bbox[3]:
+                                face_to_track[person_id] = track_id
+
+                        if face_to_track.get(person_id) == track_id:
+                            cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (0, 255, 0), 2)
+                            cv2.putText(frame, f"ID: {person_id}", (track_bbox[0], track_bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+        # 트래킹된 객체에 대한 바운딩 박스 및 텍스트 추가
+        for track in tracks:
+            if not track.is_confirmed():
+                continue
+
+            track_id = track.track_id
+            ltrb = track.to_ltrb()
+            track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
+
+
+        # 트래킹 객체와 얼굴 인식 객체의 바운딩 박스가 겹치는지 확인
+            for person_id, tracked_id in face_to_track.items():
+                if tracked_id == track_id:
+                    cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (0, 255, 0), 2)
+                    cv2.putText(frame, f"ID: {person_id}", (track_bbox[0], track_bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)                   
+            
+                        # Get gender prediction
                     gender = self.predict_gender(face_image, gender_model)
 
-                    # Get age prediction
+                        # Get age prediction
                     if len(self.age_predictions[person_id]['frames']) < 10:
                         age = self.predict_age(face_image, age_model)
                         self.age_predictions[person_id]['frames'].append(age)
