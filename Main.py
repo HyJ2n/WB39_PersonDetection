@@ -192,3 +192,4 @@ if __name__ == "__main__":
     process_videos(video_paths, output_directory, yolo_model_path, gender_model_path,age_model_path)
     # process_videos 함수 실행 후 save_face_info2.py 실행
     subprocess.run(["python", "save_face_info2.py"])
+    subprocess.run(["python", "make_video_for_face_info.py"])

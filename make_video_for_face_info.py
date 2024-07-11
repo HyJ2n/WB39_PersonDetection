@@ -27,7 +27,13 @@ def main():
     # Example paths
     txt_file_path = "./output/testVideo1_face_info.txt"
     video_path = "./test/testVideo1.mp4"
-    output_directory = "./output/"
+
+    # Extract the base name of the video file (without extension)
+    video_base_name = os.path.splitext(os.path.basename(video_path))[0]
+    output_directory = os.path.join("./output", f"{video_base_name}_clip")
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_directory, exist_ok=True)
 
     # Read the txt file and extract information
     with open(txt_file_path, 'r') as file:
