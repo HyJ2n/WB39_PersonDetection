@@ -9,6 +9,7 @@ from age_model import ResNetAgeModel, ageDataset, device, test_transform, CFG
 from PIL import Image
 from collections import Counter
 from collections import defaultdict, Counter
+from deep_sort_realtime.deepsort_tracker import DeepSort
 
 class FaceRecognizer:
     def __init__(self, device=None):
@@ -155,7 +156,7 @@ class FaceRecognizer:
 
 
 
-def process_video(known_face_paths,video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10):
+def process_video(known_face_paths,video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10 ,max_age=30, n_init=3, nn_budget=70):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     recognizer = FaceRecognizer()
 
@@ -171,6 +172,7 @@ def process_video(known_face_paths,video_path, output_dir, yolo_model_path, gend
     age_model.load_state_dict(torch.load(age_model_path))
     age_model = age_model.to(device)
     age_model.eval()
+    tracker = DeepSort(max_age=max_age, n_init=n_init, nn_budget=nn_budget)
 
     frame_number = 0
     known_face = recognizer.load_known_faces(known_face_paths)
