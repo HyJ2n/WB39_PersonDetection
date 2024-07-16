@@ -1,7 +1,10 @@
+# 시간정보 받기 전 완성 코드
 import cv2
 import os
+import sys
 import torch
 import numpy as np
+from datetime import datetime
 from facenet_pytorch import MTCNN, InceptionResnetV1
 from ultralytics import YOLO
 from age_model import ResNetAgeModel, device, test_transform
@@ -180,16 +183,17 @@ def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path, 
 
 if __name__ == "__main__":
     # test 디렉토리에 있는 모든 비디오 파일 읽기
-    video_directory = "./test/"
-    video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
-
+    #video_directory = "./test/"
+    #video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
+    video_file_paths = sys.argv[1:]
     output_directory = "./output/"
     yolo_model_path = './models/yolov8x.pt'
     gender_model_path = './models/gender_model.pt'
     age_model_path = './models/age_best.pth'
 
-    process_videos(video_paths, output_directory, yolo_model_path, gender_model_path, age_model_path)
+    process_videos(video_file_paths, output_directory, yolo_model_path, gender_model_path, age_model_path)
     # process_videos 함수 실행 후 save_face_info4.py 실행
-    #subprocess.run(["python", "save_face_info4.py"])
-    #subprocess.run(["python", "make_video_for_face_info4.py"])
-    #subprocess.run(["python", "extract_best_face3.py"])
+    subprocess.run(["python", "save_face_info4.py"])
+    subprocess.run(["python", "make_video_for_face_info4.py"])
+    subprocess.run(["python", "extract_best_face3.py"])
+
