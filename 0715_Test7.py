@@ -103,6 +103,14 @@ class FaceRecognizer:
 
         tracks = tracker.update_tracks(results, frame=frame)
 
+                # 트래킹에서 사라진 얼굴을 집합에서 제거
+        active_track_ids = {track.track_id for track in tracks if track.is_confirmed()}
+        inactive_track_ids = set(self.tracked_faces.keys()) - active_track_ids
+        for inactive_track_id in inactive_track_ids:
+            if self.tracked_faces[inactive_track_id] in self.known_faces:
+                self.known_faces.remove(self.tracked_faces[inactive_track_id])
+            del self.tracked_faces[inactive_track_id]
+
         for track in tracks:
             if not track.is_confirmed():
                 continue
@@ -196,9 +204,10 @@ def process_videos(video_paths, output_dir, known_face_paths, yolo_model_path, g
         process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, target_fps)
 
 if __name__ == "__main__":
-    video_paths = ["./test/testVideo.mp4" ,"./test/testVideo1.mp4"]
+    video_paths = ["./test/testVideo2.mp4" ,"./test/testVideo.mp4"]
     known_face_paths = [
-        "./test/horyun.png"
+        "./test/hyojin.png",
+        "./test/hyojin2.jpg"
     ]
 
     output_directory = "./output/"
