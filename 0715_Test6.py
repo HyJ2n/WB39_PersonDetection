@@ -18,6 +18,7 @@ class FaceRecognizer:
         self.mtcnn = MTCNN(keep_all=True, post_process=False, device=self.device)
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
         self.tracked_faces = {}  # 트래킹 ID와 face_id를 매핑할 딕셔너리
+        self.known_faces = set()  # 이미 트래킹 중인 face_id를 저장하는 집합
         
 
     def extract_embeddings(self, image):
@@ -37,14 +38,16 @@ class FaceRecognizer:
                 embeddings.append((embedding, box))
         return embeddings
 
-    def assign_face_id(self, face_encoding, known_faces, threshold=0.4):
+
+    
+    def assign_face_id(self, face_encoding, known_faces, threshold=0.15):
         if known_faces:
-            similarities = [self.compare_similarity(face_encoding, face['embedding']) for face in known_faces]
-            max_similarity = max(similarities)
-            max_similarity_index = similarities.index(max_similarity)
-            #print(f"Max similarity: {max_similarity} for face ID: {known_faces[max_similarity_index]['id']}")
-            if max_similarity > threshold:
-                return known_faces[max_similarity_index]['id']
+            distances = [self.compare_similarity(face_encoding, face['embedding']) for face in known_faces]
+            min_distance = np.min(distances)
+            min_distance_index = np.argmin(distances)
+
+            if min_distance < threshold:
+                return known_faces[min_distance_index]['id']
         return None
     
     def load_known_faces(self, image_paths):
@@ -103,6 +106,14 @@ class FaceRecognizer:
 
         tracks = tracker.update_tracks(results, frame=frame)
 
+                # 트래킹에서 사라진 얼굴을 집합에서 제거
+        active_track_ids = {track.track_id for track in tracks if track.is_confirmed()}
+        inactive_track_ids = set(self.tracked_faces.keys()) - active_track_ids
+        for inactive_track_id in inactive_track_ids:
+            if self.tracked_faces[inactive_track_id] in self.known_faces:
+                self.known_faces.remove(self.tracked_faces[inactive_track_id])
+            del self.tracked_faces[inactive_track_id]
+
         for track in tracks:
             if not track.is_confirmed():
                 continue
@@ -113,10 +124,23 @@ class FaceRecognizer:
 
             for embedding, box in detect_faces:
                 left, top, right, bottom = box
-                if left >= track_bbox[0] and right <= track_bbox[2] and top >= track_bbox[1] and bottom <= track_bbox[3]:
+                face_center_x = (left + right) / 2
+                face_center_y = (top + bottom) / 2
+
+                # 중심 부분을 작은 박스로 설정
+                center_box_left = face_center_x - (right - left) / 6
+                center_box_top = face_center_y - (bottom - top) / 6
+                center_box_right = face_center_x + (right - left) / 6
+                center_box_bottom = face_center_y + (bottom - top) / 6
+                # if left >= track_bbox[0] and right <= track_bbox[2] and top >= track_bbox[1] and bottom <= track_bbox[3]:
+                if (track_bbox[0] <= center_box_left <= track_bbox[2] or track_bbox[0] <= center_box_right <= track_bbox[2]) and \
+                   (track_bbox[1] <= center_box_top <= track_bbox[3] or track_bbox[1] <= center_box_bottom <= track_bbox[3]):
                     face_id = self.assign_face_id(embedding, known_faces)
                     if face_id is not None:
+                        if face_id in self.known_faces:
+                            continue  # 이미 트래킹 중인 얼굴이면 무시
                         self.tracked_faces[track_id] = face_id
+                        self.known_faces.add(face_id)
                     break
 
         self.draw_bounding_boxes(frame, tracks, self.tracked_faces)
@@ -183,10 +207,11 @@ def process_videos(video_paths, output_dir, known_face_paths, yolo_model_path, g
         process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, target_fps)
 
 if __name__ == "__main__":
-    video_paths = ["./test/testVideo.mp4" ,"./test/testVideo2.mp4"  ]
+    video_paths = ["./test/testVideo3.mp4"]
     known_face_paths = [
         "./test/hyojin.png"
     ]
+
     output_directory = "./output/"
     yolo_model_path = './models/yolov8x.pt'
     gender_model_path = './models/gender_model.pt'
