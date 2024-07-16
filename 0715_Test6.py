@@ -40,13 +40,13 @@ class FaceRecognizer:
 
 
     
-    def assign_face_id(self, face_encoding, known_faces, threshold=0.15):
+    def assign_face_id(self, face_encoding, known_faces, threshold=0.7):
         if known_faces:
             distances = [self.compare_similarity(face_encoding, face['embedding']) for face in known_faces]
             min_distance = np.min(distances)
             min_distance_index = np.argmin(distances)
 
-            if min_distance < threshold:
+            if min_distance > threshold:
                 return known_faces[min_distance_index]['id']
         return None
     
@@ -95,8 +95,7 @@ class FaceRecognizer:
 
     def recognize_faces(self, frame, frame_number, output_dir, known_faces, tracker, video_name, yolo_model, gender_model, age_model):
         original_shape = frame.shape[:2]
-        frame_resized = cv2.resize(frame, (640, 480))
-        frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         detect_faces = self.extract_embeddings(frame_rgb)
         person_detections = self.detect_persons(frame, yolo_model)
 
@@ -105,6 +104,8 @@ class FaceRecognizer:
             results.append([[xmin, ymin, xmax-xmin, ymax-ymin], 1.0, 0])
 
         tracks = tracker.update_tracks(results, frame=frame)
+
+        
 
                 # 트래킹에서 사라진 얼굴을 집합에서 제거
         active_track_ids = {track.track_id for track in tracks if track.is_confirmed()}
@@ -142,6 +143,11 @@ class FaceRecognizer:
                         self.tracked_faces[track_id] = face_id
                         self.known_faces.add(face_id)
                     break
+
+        # 탐지된 얼굴을 빨간색 bounding box로 그리기
+        for embedding, box in detect_faces:
+            left, top, right, bottom = box
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)  # 빨간색 박스 그리기        
 
         self.draw_bounding_boxes(frame, tracks, self.tracked_faces)
 
@@ -207,9 +213,9 @@ def process_videos(video_paths, output_dir, known_face_paths, yolo_model_path, g
         process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, target_fps)
 
 if __name__ == "__main__":
-    video_paths = ["./test/testVideo3.mp4"]
+    video_paths = ["./test/testVideo4.mp4"]
     known_face_paths = [
-        "./test/hyojin.png"
+        "./test/taeseung2.jpg"
     ]
 
     output_directory = "./output/"
