@@ -126,7 +126,10 @@ class FaceRecognizer:
                    (track_bbox[1] <= center_box_top <= track_bbox[3] or track_bbox[1] <= center_box_bottom <= track_bbox[3]):
                     face_id = self.assign_face_id(embedding, known_faces)
                     if face_id is not None:
+                        if face_id in self.known_faces:
+                            continue  # 이미 트래킹 중인 얼굴이면 무시
                         self.tracked_faces[track_id] = face_id
+                        self.known_faces.add(face_id)
                     break
 
         self.draw_bounding_boxes(frame, tracks, self.tracked_faces)
@@ -193,10 +196,11 @@ def process_videos(video_paths, output_dir, known_face_paths, yolo_model_path, g
         process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, target_fps)
 
 if __name__ == "__main__":
-    video_paths = ["./test/testVideo.mp4" ,"./test/testVideo2.mp4"]
+    video_paths = ["./test/testVideo.mp4" ,"./test/testVideo1.mp4"]
     known_face_paths = [
-        "./test/hyojin.png"
+        "./test/horyun.png"
     ]
+
     output_directory = "./output/"
     yolo_model_path = './models/yolov8x.pt'
     gender_model_path = './models/gender_model.pt'
