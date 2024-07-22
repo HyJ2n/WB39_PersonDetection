@@ -182,9 +182,9 @@ def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path, 
 
 if __name__ == "__main__":
     # test 디렉토리에 있는 모든 비디오 파일 읽기
-    video_directory = "./test/"
+    video_directory = "./uploaded_videos/"
     video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
-    output_directory = "./output/"
+    output_directory = "./extracted_images/"
     yolo_model_path = './models/yolov8x.pt'
     gender_model_path = './models/gender_model.pt'
     age_model_path = './models/age_best.pth'
