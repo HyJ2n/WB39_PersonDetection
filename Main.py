@@ -1,11 +1,12 @@
 import cv2
 import os
+import sys
 import torch
 import numpy as np
+from datetime import datetime
 from facenet_pytorch import MTCNN, InceptionResnetV1
 from ultralytics import YOLO
-from datetime import datetime, timedelta
-from age_model import ResNetAgeModel, ageDataset, device, test_transform, CFG
+from age_model import ResNetAgeModel, device, test_transform
 from PIL import Image
 from collections import Counter
 import subprocess
@@ -16,8 +17,7 @@ class FaceRecognizer:
         self.mtcnn = MTCNN(keep_all=True, post_process=False, device=self.device)
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
         self.persons = []
-        self.person_id = 0
-        self.age_predictions = {}  # 나이 예측 결과를 저장할 딕셔너리 초기화
+        self.age_predictions = {}
 
     def extract_embeddings(self, image):
         boxes, probs = self.mtcnn.detect(image)
@@ -27,16 +27,33 @@ class FaceRecognizer:
                 if prob < 0.99:
                     continue
                 box = [int(coord) for coord in box]
+                box = self._expand_box(box, image.shape[:2])
                 face = image[box[1]:box[3], box[0]:box[2]]
                 if face.size == 0:
                     continue
                 face_tensor = torch.tensor(face).unsqueeze(0).permute(0, 3, 1, 2).float().to(self.device) / 255.0
                 face_resized = torch.nn.functional.interpolate(face_tensor, size=(160, 160), mode='bilinear')
+                face_image = face_resized.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                face_image = (face_image * 255).astype(np.uint8)  # Convert to uint8
                 embedding = self.resnet(face_resized).detach().cpu().numpy().flatten()
-                embeddings.append((embedding, box, face, prob))
+                embeddings.append((embedding, box, face_image, prob))
             return embeddings
         else:
-            return []  # 얼굴을 감지하지 못한 경우 빈 리스트 반환
+            return []
+
+    def _expand_box(self, box, image_shape, expand_factor=1.2):
+        # 확장된 박스 좌표 계산
+        center_x, center_y = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+        width, height = box[2] - box[0], box[3] - box[1]
+        new_width, new_height = int(width * expand_factor), int(height * expand_factor)
+        
+        # 새로운 박스 좌표 계산
+        new_x1 = max(center_x - new_width // 2, 0)
+        new_y1 = max(center_y - new_height // 2, 0)
+        new_x2 = min(center_x + new_width // 2, image_shape[1])
+        new_y2 = min(center_y + new_height // 2, image_shape[0])
+        
+        return [new_x1, new_y1, new_x2, new_y2]
 
     @staticmethod
     def compare_similarity(embedding1, embedding2):
@@ -44,27 +61,36 @@ class FaceRecognizer:
 
     def recognize_faces(self, frame, frame_number, output_dir, video_name, gender_model, age_model):
         original_shape = frame.shape[:2]
-        frame_resized = cv2.resize(frame, (640, 480))
-        frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         forward_embeddings = self.extract_embeddings(frame_rgb)
 
         if forward_embeddings:
             for embedding, box, face_image, prob in forward_embeddings:
                 matched = False
+                highest_similarity = 0
+                best_match_id = None
+                
                 for person in self.persons:
-                    if self.compare_similarity(embedding, person['embedding']) > 0.7:
-                        person_id = person['id']
-                        matched = True
-                        break
-                if not matched:
+                    similarity = self.compare_similarity(embedding, person['embedding'])
+                    if similarity > highest_similarity:
+                        highest_similarity = similarity
+                        best_match_id = person['id']
+                
+                if highest_similarity > 0.6:  # 유사도 임계값
+                    person_id = best_match_id
+                    matched = True
+                else:
                     person_id = len(self.persons) + 1
                     self.persons.append({'id': person_id, 'embedding': embedding})
-                    self.age_predictions[person_id] = {'frames': [], 'age': None}  # 새로운 사람을 인식할 때 나이 예측 결과 초기화
+                    self.age_predictions[person_id] = {'frames': [], 'age': None}
 
                 # Get gender prediction
                 gender = predict_gender(face_image, gender_model)
 
                 # Get age prediction
+                if person_id not in self.age_predictions:
+                    self.age_predictions[person_id] = {'frames': [], 'age': None}
+                
                 if len(self.age_predictions[person_id]['frames']) < 10:
                     age = predict_age(face_image, age_model)
                     self.age_predictions[person_id]['frames'].append(age)
@@ -76,34 +102,13 @@ class FaceRecognizer:
 
                 output_folder = os.path.join(output_dir, f'{video_name}_face')
                 os.makedirs(output_folder, exist_ok=True)
+                # 얼굴 이미지를 160x160으로 리사이즈
+                face_image_resized = cv2.resize(face_image, (160, 160))
                 output_path = os.path.join(output_folder, f'person_{person_id}_frame_{frame_number}_gender_{gender}_age_{age}.jpg')
-                cv2.imwrite(output_path, cv2.cvtColor(face_image, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(output_path, cv2.cvtColor(face_image_resized, cv2.COLOR_RGB2BGR))
                 print(f"Saved image: {output_path}, person ID: {person_id}, detection probability: {prob}")
 
-                # Draw bounding box
-                scale_x = original_shape[1] / 640
-                scale_y = original_shape[0] / 480
-                box = [int(coord) for coord in box]
-                box[0] = int(box[0] * scale_x)
-                box[1] = int(box[1] * scale_y)
-                box[2] = int(box[2] * scale_x)
-                box[3] = int(box[3] * scale_y)
-                cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 2)
-
-                # Draw gender text below the bounding box
-                #gender_text = f"Gender: {gender}"
-                #cv2.putText(frame, gender_text, (box[0], box[3] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
-                # Draw age text below the bounding box
-                #age_text = f"Age: {age}"
-                #cv2.putText(frame, age_text, (box[0], box[3] + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
-                # Draw ID text above the bounding box
-                #id_text = f"ID: {person_id}"
-                #cv2.putText(frame, id_text, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
         return frame
-
 
 def predict_gender(face_image, gender_model):
     face_rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
@@ -111,7 +116,6 @@ def predict_gender(face_image, gender_model):
     genders = {0: "Male", 1: "Female"}
     gender_id = results[0].boxes.data[0][5].item()
     return genders.get(gender_id, "Unknown")
-
 
 def predict_age(face_image, age_model):
     if isinstance(face_image, np.ndarray):
@@ -129,16 +133,14 @@ def predict_age(face_image, age_model):
     else:
         return "Unknown"
 
-
-def process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10):
+def process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10, global_persons=[]):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     recognizer = FaceRecognizer()
+    recognizer.persons = global_persons
 
     v_cap = cv2.VideoCapture(video_path)
     frame_rate = int(v_cap.get(cv2.CAP_PROP_FPS))
     frame_interval = frame_rate // target_fps
-    frame_width, frame_height = None, None
-    video_writer = None
 
     yolo_model = YOLO(yolo_model_path)
     gender_model = YOLO(gender_model_path)
@@ -160,37 +162,33 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path, ag
 
         frame = recognizer.recognize_faces(frame, frame_number, output_dir, video_name, gender_model, age_model)
 
-        if frame_width is None or frame_height is None:
-            frame_height, frame_width = frame.shape[:2]
-            output_video_path = os.path.join(output_dir, f"{video_name}_output.mp4")
-            video_writer = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), target_fps, (frame_width, frame_height))
-
-        video_writer.write(frame)
-
         cv2.imshow('Frame', frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     v_cap.release()
-    if video_writer:
-        video_writer.release()
     cv2.destroyAllWindows()
 
+    return recognizer.persons
+
 def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps=10):
+    global_persons = []
     for video_path in video_paths:
-        process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps)
+        global_persons = process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, target_fps, global_persons)
 
 if __name__ == "__main__":
-    video_paths = ["./test/testVideo1.mp4", "./test/testVideo2.mp4"]
+    # test 디렉토리에 있는 모든 비디오 파일 읽기
+    video_directory = "./test/"
+    video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
+    #video_file_paths = sys.argv[1:]
     output_directory = "./output/"
     yolo_model_path = './models/yolov8x.pt'
     gender_model_path = './models/gender_model.pt'
     age_model_path = './models/age_best.pth'
 
-
-    process_videos(video_paths, output_directory, yolo_model_path, gender_model_path,age_model_path)
-    # process_videos 함수 실행 후 save_face_info3.py 실행
-    subprocess.run(["python", "save_face_info3.py"])
-    subprocess.run(["python", "make_video_for_face_info3.py"])
-    subprocess.run(["python", "extract_best_face2.py"])
+    process_videos(video_paths, output_directory, yolo_model_path, gender_model_path, age_model_path)
+    #process_videos 함수 실행 후 save_face_info4.py 실행
+    subprocess.run(["python", "save_face_info5.py"])
+    subprocess.run(["python", "tracking_final6.py"])
+    #subprocess.run(["python", "videoclip3.py"])
