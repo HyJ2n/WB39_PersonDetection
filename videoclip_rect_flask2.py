@@ -47,7 +47,7 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
     video_path = []
 
     for clip_folder in clip_folders:
-        video_name = clip_folder.replace('_clip', '')
+        clip_video_name = clip_folder.replace('_clip', '')
         clip_folder_path = os.path.join(extracted_dir, clip_folder)
 
         for person_id in os.listdir(clip_folder_path):
@@ -58,7 +58,7 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
 
                 for video_file in video_files:
                     video_file_path = os.path.join(person_folder_path, video_file)
-                    video_start_time = get_video_start_time(video_name)  # 설정된 시작 시간
+                    video_start_time = get_video_start_time(clip_video_name)  # 설정된 시작 시간
                     if video_start_time is None:
                         continue  # 시작 시간이 없는 경우 다음 파일로 이동
                     person_id_number = person_id.replace('person_', '')  # 접두어 제거

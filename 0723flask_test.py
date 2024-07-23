@@ -131,22 +131,23 @@ def save_to_db(person_info, pro_video_id, user_no):
         connection.close()
 
 # 클립 처리 함수
-def clip_video(video_name, user_id, or_video_id):
+def clip_videos(video_names, user_id, or_video_ids):
     try:
         user_no = get_user_no(user_id)
         if user_no is not None:
-            pro_video_id = get_pro_video_id(or_video_id)
-            if pro_video_id is not None:
-                process = subprocess.Popen(
-                    ["python", "videoclip_rect_flask2.py", video_name, str(user_id), str(user_no), str(pro_video_id)], 
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                )
-                stdout, stderr = process.communicate()
-                    
-                if process.returncode != 0:
-                    print(f"Error occurred: {stderr.decode('utf-8')}")
-                else:
-                    print("클립 추출 성공")
+            for video_name, or_video_id in zip(video_names, or_video_ids):
+                pro_video_id = get_pro_video_id(or_video_id)
+                if pro_video_id is not None:
+                    process = subprocess.Popen(
+                        ["python", "videoclip_rect_flask2.py", video_name, str(user_id), str(user_no), str(pro_video_id)], 
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                    )
+                    stdout, stderr = process.communicate()
+                        
+                    if process.returncode != 0:
+                        print(f"Error occurred: {stderr.decode('utf-8')}")
+                    else:
+                        print(f"클립 추출 성공 for video {video_name}")
             
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
