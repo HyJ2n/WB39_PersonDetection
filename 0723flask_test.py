@@ -305,6 +305,7 @@ def upload_file():
         with connection.cursor() as cursor:
             # 비디오 데이터 처리
             video_data = data.get('video_data', [])
+            video_names = []
             for video in video_data:
                 video_name = video.get('video_name', '')
                 video_content_base64 = video.get('video_content', '')
@@ -325,6 +326,7 @@ def upload_file():
                         VALUES (%s, %s, %s, %s)
                     """
                     cursor.execute(sql, (video_name, absolute_video_path, start_time, cam_name))
+                    video_names.append(video_name)
 
             # 이미지 데이터 처리
             image_data = data.get('image_data', {})
@@ -354,8 +356,7 @@ def upload_file():
         response.status_code = 200
 
         # 각 비디오 파일에 대해 비동기 처리 호출
-        for video in video_data:
-            video_name = video.get('video_name', '')
+        for video_name in video_names:
             video_base_name = os.path.splitext(video_name)[0]  # 확장자를 제거한 이름
             threading.Thread(target=process_video, args=(video_base_name, user_id)).start()
 
