@@ -2,6 +2,7 @@ import cv2
 import os
 import torch
 import numpy as np
+import sys
 from facenet_pytorch import MTCNN, InceptionResnetV1
 from ultralytics import YOLO
 from datetime import datetime, timedelta
@@ -256,7 +257,7 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
         if person_id in video_writer:
             video_writer[person_id].write(frame)
 
-        cv2.imshow('Frame', frame)
+        #cv2.imshow('Frame', frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -292,20 +293,24 @@ def process_videos(video_directory, output_dir, known_face_paths, yolo_model_pat
             for face in known_faces:
                 similarity = target_recognizer.compare_similarity(target_embedding, face['embedding'])
                 print(f"Comparing with {face['id']} - Similarity: {similarity}")
-                if similarity >= 0.6:
+                if similarity >= 0.64:
                     process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, person_id, target_fps)
                     break
 
 if __name__ == "__main__":
-    video_directory = "./test/"
-    known_face_paths = [
-        r"C:\Users\user\Desktop\Face_Gender\test\horyun.jpg"
-    ]
+    try:
+        user_id = sys.argv[2]
+        video_directory = f"./uploaded_videos/{user_id}/"
+        known_face_paths = [
+            f"./uploaded_images/{user_id}/horyun.png"
+        ]
 
-    output_directory = "./output/"
-    yolo_model_path = './models/yolov8x.pt'
-    gender_model_path = './models/gender_model.pt'
-    age_model_path = './models/age_best.pth'
+        output_directory = f"./extracted_images/{user_id}/"
+        yolo_model_path = './models/yolov8x.pt'
+        gender_model_path = './models/gender_model.pt'
+        age_model_path = './models/age_best.pth'
 
-    process_videos(video_directory, output_directory, known_face_paths, yolo_model_path, gender_model_path, age_model_path)
-
+        process_videos(video_directory, output_directory, known_face_paths, yolo_model_path, gender_model_path, age_model_path)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
