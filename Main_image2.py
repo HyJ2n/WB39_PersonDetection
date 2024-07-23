@@ -15,7 +15,7 @@ class FaceRecognizer:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if device is None else device
         self.mtcnn = MTCNN(keep_all=True, post_process=False, device=self.device)
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
-        self.persons = []
+        self.persons = {}
         self.age_predictions = {}
 
     def extract_embeddings(self, image):
@@ -72,19 +72,22 @@ class FaceRecognizer:
                 highest_similarity = 0
                 best_match_id = None
                 
-                for person in self.persons:
-                    similarity = self.compare_similarity(embedding, person['embedding'])
-                    if similarity > highest_similarity:
-                        highest_similarity = similarity
-                        best_match_id = person['id']
+                for person_id, data in self.persons.items():
+                    for saved_embedding in data['embeddings']:
+                        similarity = self.compare_similarity(embedding, saved_embedding)
+                        if similarity > highest_similarity:
+                            highest_similarity = similarity
+                            best_match_id = person_id
                 
                 if highest_similarity > 0.6:  # 유사도 임계값
                     person_id = best_match_id
                     matched = True
                 else:
                     person_id = len(self.persons) + 1
-                    self.persons.append({'id': person_id, 'embedding': embedding})
+                    self.persons[person_id] = {'embeddings': []}
                     self.age_predictions[person_id] = {'frames': [], 'age': None}
+
+                self.persons[person_id]['embeddings'].append(embedding)
 
                 # Get gender prediction
                 gender = predict_gender(face_image, gender_model)
@@ -142,7 +145,7 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path, ag
 
     v_cap = cv2.VideoCapture(video_path)
     frame_rate = int(v_cap.get(cv2.CAP_PROP_FPS))
-    frame_interval = 4  # 3프레임마다 처리
+    frame_interval = 3  # 3프레임마다 처리
 
     yolo_model = YOLO(yolo_model_path)
     gender_model = YOLO(gender_model_path)
