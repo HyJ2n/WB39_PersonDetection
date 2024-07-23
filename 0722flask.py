@@ -198,6 +198,10 @@ def upload_file():
         if isinstance(data, str):
             return jsonify({"status": "error", "message": "Invalid JSON data format"}), 400
 
+        # 유저 데이터 추출
+        user_data = data.get('user_data', {})
+        user_id = user_data.get('user_id', '')
+
         # 필터링 데이터 추출
         filter_data = data.get('filter_data', {})
         age = filter_data.get('age', '')
@@ -210,6 +214,10 @@ def upload_file():
         print(f"Gender: {gender}")
         print(f"Color: {color}")
         print(f"Type: {type}")
+
+        # user_id 기반으로 디렉토리 생성
+        user_video_path = os.path.join('uploaded_videos', str(user_id))
+        os.makedirs(user_video_path, exist_ok=True)
 
         # 데이터베이스 연결
         connection = get_db_connection()
@@ -224,7 +232,7 @@ def upload_file():
 
                 if video_name and video_content_base64:
                     video_content = base64.b64decode(video_content_base64)
-                    video_path = os.path.join(VIDEO_SAVE_PATH, video_name)
+                    video_path = os.path.join(user_video_path, video_name)
                     absolute_video_path = os.path.abspath(video_path)  # 절대 경로로 변환
 
                     with open(absolute_video_path, 'wb') as video_file:
@@ -244,7 +252,7 @@ def upload_file():
 
             if image_name and image_content_base64:
                 image_content = base64.b64decode(image_content_base64)
-                image_path = os.path.join(IMAGE_SAVE_PATH, image_name)
+                image_path = os.path.join('uploaded_images', image_name)
                 absolute_image_path = os.path.abspath(image_path)  # 절대 경로로 변환
 
                 with open(absolute_image_path, 'wb') as image_file:
@@ -281,7 +289,6 @@ def upload_file():
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
         return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
-
 
 # 2.회원가입 엔드포인트(Post)
 @app.route('/receive_data', methods=['POST'])
@@ -344,7 +351,7 @@ def receive_data():
         print("No data received or invalid format")  # 디버깅 메시지 추가
         return jsonify({"error": "No data received or invalid format"}), 400
 
-# 3.로그인 엔드포인트(Post)
+# 3. 로그인 엔드포인트(Post)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -354,8 +361,9 @@ def login():
         cursor = connection.cursor()
         
         try:
+            # 로그인 정보 확인
             login_sql = """
-                SELECT u.user_id, p.password
+                SELECT u.user_no, u.user_id, p.password
                 FROM user u
                 JOIN password p ON u.user_no = p.user_no
                 WHERE u.user_id = %s AND p.password = %s
@@ -365,7 +373,27 @@ def login():
             
             print("Login check result:", result)  # 디버깅 메시지 추가
             if result is not None:
-                return jsonify({"message": "Login successful"}), 200
+                user_no = result['user_no']
+                user_id = result['user_id']
+                
+                # 사용자 이름 가져오기
+                profile_sql = """
+                    SELECT user_name
+                    FROM profile
+                    WHERE user_no = %s
+                """
+                cursor.execute(profile_sql, (user_no,))
+                profile_result = cursor.fetchone()
+                user_name = profile_result['user_name'] if profile_result else "Unknown"
+
+                # user_id를 출력
+                print(f"Logged in user_id: {user_id}")
+
+                return jsonify({
+                    "message": "Login successful",
+                    "user_id": user_id,
+                    "user_name": user_name
+                }), 200
             else:
                 return jsonify({"error": "Invalid ID or password"}), 401
         except Exception as e:
@@ -393,17 +421,30 @@ def upload_map():
         connection = get_db_connection()
         print("Database connection established")
         with connection.cursor() as cursor:
+            user_id = data.get('user_id')
             address = data.get('address')
             map_latitude = data.get('map_latitude')
             map_longitude = data.get('map_longitude')
 
-            if map_latitude is not None and map_longitude is not None and address:
+            if user_id and map_latitude is not None and map_longitude is not None and address:
+                # user_id를 이용하여 user_no 조회
+                cursor.execute("SELECT user_no FROM user WHERE user_id = %s", (user_id))
+                result = cursor.fetchone()
+
+                if not result:
+                    print(f"user_id {user_id} not found")
+                    return jsonify({"error": "user_id not found"}), 404
+
+                user_no = result['user_no']
+                print(f"Found user_no: {user_no}")
+
+                # map 테이블에 데이터 삽입
                 sql = """
-                    INSERT INTO map (address, map_latitude, map_longitude)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO map (address, map_latitude, map_longitude, user_no)
+                    VALUES (%s, %s, %s, %s)
                 """
-                cursor.execute(sql, (address, map_latitude, map_longitude))
-                print(f"Inserted: {address}, {map_latitude}, {map_longitude}")
+                cursor.execute(sql, (address, map_latitude, map_longitude, user_no))
+                print(f"Inserted: {address}, {map_latitude}, {map_longitude}, {user_no}")
 
                 connection.commit()
                 print("Transaction committed")
