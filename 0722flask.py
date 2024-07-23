@@ -131,18 +131,23 @@ def save_to_db(person_info, pro_video_id, user_no):
         connection.close()
 
 # 클립 처리 함수
-def clip_video(video_name, user_no):
+def clip_video(video_name, user_id, or_video_id):
     try:
-        process = subprocess.Popen(
-            ["python", "videoclip_rect_flask.py", video_name, str(user_no)], 
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        stdout, stderr = process.communicate()
+        user_no = get_user_no(user_id)
+        if user_no is not None:
+            pro_video_id = get_pro_video_id(or_video_id)
+            if pro_video_id is not None:
+                process = subprocess.Popen(
+                    ["python", "videoclip_rect_flask2.py", video_name, str(user_id), str(user_no), str(pro_video_id)], 
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                stdout, stderr = process.communicate()
+                    
+                if process.returncode != 0:
+                    print(f"Error occurred: {stderr.decode('utf-8')}")
+                else:
+                    print("클립 추출 성공")
             
-        if process.returncode != 0:
-            print(f"Error occurred: {stderr.decode('utf-8')}")
-        else:
-            print("클립 추출 성공")
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
 
@@ -229,11 +234,10 @@ def process_save_face_info(video_name, user_id, or_video_id):
         else:
             print("정보 추출 성공")
             tracking_video(video_name, user_id, or_video_id)
-            clip_video(video_name, user_id)
+            clip_video(video_name, user_id, or_video_id)
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
-
 
 # 비디오 처리 함수
 def process_video(video_name, user_id):
@@ -250,12 +254,14 @@ def process_video(video_name, user_id):
         else:
             print("얼굴정보추출 성공")
             # 얼굴정보추출 성공 후 save_face_info6.py 실행
-            or_video_id = get_or_video_id(video_name)
+            video_name_with_ext = video_name + ".mp4"  # 파일 확장자 추가
+            or_video_id = get_or_video_id(video_name_with_ext)
             if or_video_id is not None:
                 process_save_face_info(video_name, user_id, or_video_id)
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
+
 
 # 1.파일 업로드 엔드포인트(Post)
 @app.route('/upload_file', methods=['POST'])
@@ -327,7 +333,7 @@ def upload_file():
 
             if image_name and image_content_base64:
                 image_content = base64.b64decode(image_content_base64)
-                image_path = os.path.join('uploaded_images', image_name)
+                image_path = os.path.join(user_image_path, image_name)
                 absolute_image_path = os.path.abspath(image_path)  # 절대 경로로 변환
 
                 with open(absolute_image_path, 'wb') as image_file:
