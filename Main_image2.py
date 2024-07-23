@@ -138,7 +138,7 @@ def predict_age(face_image, age_model):
     else:
         return "Unknown"
 
-def process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, global_persons=[]):
+def process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, global_persons={}):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     recognizer = FaceRecognizer()
     recognizer.persons = global_persons
@@ -178,13 +178,14 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path, ag
     return recognizer.persons
 
 def process_videos(video_paths, output_dir, yolo_model_path, gender_model_path, age_model_path):
-    global_persons = []
+    global_persons = {}
     for video_path in video_paths:
         global_persons = process_video(video_path, output_dir, yolo_model_path, gender_model_path, age_model_path, global_persons)
 
 if __name__ == "__main__":
     try:
-        video_directory = "./uploaded_videos/"
+        user_no = sys.argv[2]
+        video_directory = f"./uploaded_videos/{user_no}/"
         video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
         output_directory = "./extracted_images/"
         yolo_model_path = './models/yolov8x.pt'
