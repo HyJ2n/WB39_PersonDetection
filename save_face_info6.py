@@ -1,3 +1,4 @@
+import sys
 import os
 import re
 import shutil
@@ -81,18 +82,25 @@ def save_best_faces(image_files, output_folder):
         print(f"Copied best quality face image: {output_filepath}")
 
 if __name__ == "__main__":
-    output_directory = "./output/"
-    for video_folder in os.listdir(output_directory):
-        if '_face' in video_folder:
-            folder_path = os.path.join(output_directory, video_folder)
-            if os.path.isdir(folder_path):
-                try:
-                    info_dict, image_files = gather_info_from_files(folder_path)
-                    output_file = os.path.join(output_directory, f"{video_folder}_info.txt")
-                    save_info_to_txt(info_dict, output_file)
-                    print(f"Information saved to {output_file}")
+    try:
+        user_id = sys.argv[2]
+        output_directory = f"./extracted_images/{user_id}/"
+        os.makedirs(output_directory, exist_ok=True)  # 디렉토리를 미리 생성합니다.
 
-                    clip_folder = folder_path.replace('_face', '_clip')
-                    save_best_faces(image_files, clip_folder)
-                except Exception as e:
-                    print(f"Error processing folder {folder_path}: {e}")
+        for video_folder in os.listdir(output_directory):
+            if '_face' in video_folder:
+                folder_path = os.path.join(output_directory, video_folder)
+                if os.path.isdir(folder_path):
+                    try:
+                        info_dict, image_files = gather_info_from_files(folder_path)
+                        output_file = os.path.join(output_directory, f"{video_folder}_info.txt")
+                        save_info_to_txt(info_dict, output_file)
+                        print(f"Information saved to {output_file}")
+
+                        clip_folder = folder_path.replace('_face', '_clip')
+                        save_best_faces(image_files, clip_folder)
+                    except Exception as e:
+                        print(f"Error processing folder {folder_path}: {e}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
