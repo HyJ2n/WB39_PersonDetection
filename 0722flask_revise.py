@@ -57,7 +57,8 @@ def update_person_face_from_clip(person_no):
                 print(f"No or_video_name found for pro_video_id: {pro_video_id}")
                 return
 
-            or_video_name = or_video_name_result['or_video_name']
+            # .mp4 확장자 제거
+            or_video_name = os.path.splitext(or_video_name_result['or_video_name'])[0]
             
             # user_id를 가져옴
             sql = "SELECT user_id FROM user WHERE user_no = (SELECT user_no FROM person WHERE person_no = %s)"
@@ -69,7 +70,7 @@ def update_person_face_from_clip(person_no):
 
             user_id = user_result['user_id']
 
-             # 이미지 파일 경로 설정
+            # 이미지 파일 경로 설정
             person_image_dir = f'./extracted_images/{user_id}/{or_video_name}_clip/person_{person_id}/'
             if not os.path.exists(person_image_dir):
                 print(f"Directory not found: {person_image_dir}")
@@ -87,29 +88,40 @@ def update_person_face_from_clip(person_no):
             # 상대 경로로 저장
             face_image_relative_path = os.path.join(person_image_dir, face_name)
 
-            # person_origin_face 업데이트
-            sql = "UPDATE person SET person_origin_face = %s WHERE person_no = %s"
+            # person_face 업데이트
+            sql = "UPDATE person SET person_face = %s WHERE person_no = %s"
             cursor.execute(sql, (face_image_relative_path, person_no))
             connection.commit()
-            print(f"Updated person_origin_face for person_no: {person_no} with {face_image_relative_path}")
+            print(f"Updated person_face for person_no: {person_no} with {face_image_relative_path}")
+
+            # person_origin_face 설정
+            user_image_dir = f'./uploaded_images/{user_id}/'
+            if not os.path.exists(user_image_dir):
+                print(f"Directory not found: {user_image_dir}")
+                return
+
+            # 업로드된 이미지 파일 찾기
+            user_image_files = [f for f in os.listdir(user_image_dir) if f.endswith('.jpg') or f.endswith('.png')]
+            if not user_image_files:
+                print(f"No uploaded image files found in directory: {user_image_dir}")
+                return
+
+            # 첫 번째 업로드된 이미지 파일 사용 (필요에 따라 선택 방법 변경 가능)
+            uploaded_image_name = user_image_files[0]
+            person_face_relative_path = os.path.join(user_image_dir, uploaded_image_name)
+
+            # person 테이블 업데이트
+            sql = """
+                UPDATE person 
+                SET person_origin_face = %s, person_face = %s 
+                WHERE person_no = %s
+            """
+            cursor.execute(sql, (face_image_relative_path, person_face_relative_path, person_no))
+            connection.commit()
+            print(f"Updated person_origin_face and person_face for person_no: {person_no}")
 
     except pymysql.MySQLError as e:
         print(f"MySQL error occurred: {str(e)}")
-    finally:
-        connection.close()
-
-
-def get_user_id(user_no):
-    connection = get_db_connection()
-    try:
-        with connection.cursor() as cursor:
-            sql = "SELECT user_id FROM user WHERE user_no = %s"
-            cursor.execute(sql, (user_no,))
-            result = cursor.fetchone()
-            return result['user_id'] if result else None
-    except pymysql.MySQLError as e:
-        print(f"MySQL error occurred: {str(e)}")
-        return None
     finally:
         connection.close()
 
@@ -254,7 +266,7 @@ def clip_video(video_name, user_id, or_video_id):
 def tracking_video(video_name, user_id, or_video_id):
     try:
         process = subprocess.Popen(
-            ["python", "tracking_final6.py", video_name, str(user_id)], 
+            ["python", "tracking_final6_revise.py", video_name, str(user_id)], 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = process.communicate()

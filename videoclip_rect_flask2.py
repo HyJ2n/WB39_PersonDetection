@@ -162,7 +162,7 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
             video_order_path.append(clip["video_label"])
 
     # 클립 시간 정보를 텍스트 파일로 저장
-    with open(os.path.join(output_clips_dir, 'clips_times.txt'), 'w') as f:
+    with open(os.path.join(output_clips_dir, f'{video_name}_clips_times.txt'), 'w') as f:
         for clip_info in clip_times:
             f.write(f"클립 파일: {clip_info['clip_file']}, 시작 시간: {clip_info['start_time']}, person_id: {clip_info['person_id']}\n")  # person_id 추가
 
@@ -180,10 +180,11 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
     for clip_info in clip_times:
         print(f"클립 파일: {clip_info['clip_file']}, 시작 시간: {clip_info['start_time']}, person_id: {clip_info['person_id']}")  # person_id 추가
 
-    print("클립의 시간 정보가 clips_times.txt 파일로 저장되었습니다.")
+    print(f"{video_name}의 클립 시간 정보가 {video_name}_clips_times.txt 파일로 저장되었습니다.")
 
     # 클립 정보를 DB에 저장
     save_clips_to_db(clip_times, user_no, pro_video_id)
+
 
 
 def save_clips_to_db(clip_times, user_no, pro_video_id):
