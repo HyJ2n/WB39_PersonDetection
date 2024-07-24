@@ -440,18 +440,17 @@ def receive_data():
     else:
         print("No data received or invalid format")  # 디버깅 메시지 추가
         return jsonify({"error": "No data received or invalid format"}), 400
-
+    
 # 3. 로그인 엔드포인트(Post)
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    print("Login attempt:", data)  # 디버깅 메시지 추가
+    print("Login attempt:", data)
     if data and 'ID' in data and 'PW' in data:
         connection = get_db_connection()
         cursor = connection.cursor()
-        
+
         try:
-            # 로그인 정보 확인
             login_sql = """
                 SELECT u.user_no, u.user_id, p.password
                 FROM user u
@@ -460,13 +459,11 @@ def login():
             """
             cursor.execute(login_sql, (data['ID'], data['PW']))
             result = cursor.fetchone()
-            
-            print("Login check result:", result)  # 디버깅 메시지 추가
+
             if result is not None:
                 user_no = result['user_no']
                 user_id = result['user_id']
-                
-                # 사용자 이름 가져오기
+
                 profile_sql = """
                     SELECT user_name
                     FROM profile
@@ -476,27 +473,76 @@ def login():
                 profile_result = cursor.fetchone()
                 user_name = profile_result['user_name'] if profile_result else "Unknown"
 
-                # user_id를 출력
-                print(f"Logged in user_id: {user_id}")
+                map_camera_sql = """
+                    SELECT 
+                        m.address, 
+                        m.map_latitude, 
+                        m.map_longitude, 
+                        c.cam_name, 
+                        c.maker_latitude, 
+                        c.maker_longitude
+                    FROM map m
+                    LEFT JOIN camera c ON m.map_num = c.map_num
+                    WHERE m.user_no = %s
+                """
+                cursor.execute(map_camera_sql, (user_no,))
+                map_camera_result = cursor.fetchall()
 
-                return jsonify({
+                person_sql = """
+                    SELECT 
+                        person_id,
+                        pro_video_id,
+                        person_age,
+                        person_gender,
+                        person_color,
+                        person_clothes,
+                        person_face,
+                        person_origin_face
+                    FROM person
+                    WHERE user_no = %s
+                """
+                cursor.execute(person_sql, (user_no,))
+                person_result = cursor.fetchall()
+
+                # Clip 정보 가져오기
+                clip_sql = """
+                    SELECT 
+                        clip_id,
+                        person_id,
+                        clip_video,
+                        clip_location,
+                        clip_time
+                    FROM clip
+                    WHERE person_id IN (SELECT person_id FROM person WHERE user_no = %s)
+                """
+                cursor.execute(clip_sql, (user_no,))
+                clip_result = cursor.fetchall()
+
+                map_camera_dict = [dict(row) for row in map_camera_result]
+                person_dict = [dict(row) for row in person_result]
+                clip_dict = [dict(row) for row in clip_result]
+
+                response_data = {
                     "message": "Login successful",
                     "user_id": user_id,
-                    "user_name": user_name
-                }), 200
+                    "user_name": user_name,
+                    "map_camera_info": map_camera_dict,
+                    "person_info": person_dict,
+                    "clip_info": clip_dict  # 클립 정보 추가
+                }
+
+                return jsonify(response_data), 200
             else:
                 return jsonify({"error": "Invalid ID or password"}), 401
         except Exception as e:
-            print(f"Exception: {str(e)}")  # 디버깅 메시지 추가
+            print(f"Exception: {str(e)}")
             return jsonify({"error": str(e)}), 500
         finally:
             cursor.close()
             connection.close()
-            print("Connection closed")  # 디버깅 메시지 추가
     else:
-        print("No data received or invalid format")  # 디버깅 메시지 추가
         return jsonify({"error": "No data received or invalid format"}), 400
-
+    
 # 4.지도 주소 엔드포인트(Post)
 @app.route('/upload_maps', methods=['POST'])
 def upload_map():
@@ -626,4 +672,5 @@ def upload_cameras():
 
 if __name__ == '__main__':
     print("Starting server")  # 서버 시작 디버깅 메시지
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
+
