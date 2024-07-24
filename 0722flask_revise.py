@@ -186,26 +186,34 @@ def tracking_video(video_name, user_id, or_video_id):
 # 트래킹 영상 DB에 저장 함수
 def save_processed_video_info(video_name, user_id, user_no, or_video_id):
     try:
-        # ./extracted_images 디렉토리에서 _clip이 포함된 폴더를 찾음
-        extracted_dir = f'./extracted_images/{user_id}'
-        clip_folders = [f for f in os.listdir(extracted_dir) if '_clip' in f]
+        extracted_dir = f'./extracted_images/{user_id}/{video_name}_clip'
+        if not os.path.exists(extracted_dir):
+            print(f"No clip folder found for video {video_name}")
+            return
+        
         connection = get_db_connection()
         try:
             with connection.cursor() as cursor:
-                for clip_folder in clip_folders:
-                    video_name = clip_folder.replace('_clip', '')
-                    clip_folder_path = os.path.join(extracted_dir, clip_folder)
+                person_folders = os.listdir(extracted_dir)
+                for person_id in person_folders:
+                    person_folder_path = os.path.join(extracted_dir, person_id)
                     
-                    for person_id in os.listdir(clip_folder_path):
-                        person_folder_path = os.path.join(clip_folder_path, person_id)
+                    if os.path.isdir(person_folder_path):
+                        video_files = [vf for vf in os.listdir(person_folder_path) if vf.endswith('.mp4')]
                         
-                        if os.path.isdir(person_folder_path):
-                            video_files = [vf for vf in os.listdir(person_folder_path) if vf.endswith('.mp4')]
+                        for video_file in video_files:
+                            pro_video_name = f"{video_name}_{person_id}_{video_file}"
+                            pro_video_path = os.path.abspath(os.path.join(person_folder_path, video_file))
                             
-                            for video_file in video_files:
-                                pro_video_name = f"{video_name}_{video_file}"
-                                pro_video_path = os.path.abspath(os.path.join(person_folder_path, video_file))
-                                
+                            # 중복 체크 로직 추가
+                            sql_check = """
+                                SELECT COUNT(*) as count FROM processed_video 
+                                WHERE pro_video_name = %s AND or_video_id = %s
+                            """
+                            cursor.execute(sql_check, (pro_video_name, or_video_id))
+                            count = cursor.fetchone()['count']
+                            
+                            if count == 0:
                                 sql = """
                                     INSERT INTO processed_video (or_video_id, pro_video_name, pro_video_content, user_no)
                                     VALUES (%s, %s, %s, %s)
@@ -218,7 +226,7 @@ def save_processed_video_info(video_name, user_id, user_no, or_video_id):
             connection.close()
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
-
+        
 # 얼굴 처리 함수
 def process_save_face_info(video_name, user_id, or_video_id):
     try:
