@@ -56,31 +56,29 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
     # 클립 시간 정보를 저장할 리스트
     clip_times = []
 
-    # _clip 디렉토리에서 video_path와 시작 시간 설정
-    extracted_dir = f'./extracted_images/{user_id}'
-    clip_folders = [f for f in os.listdir(extracted_dir) if '_clip' in f]
+    # video_name에 해당하는 _clip 디렉토리에서 파일 경로와 시작 시간 설정
+    extracted_dir = f'./extracted_images/{user_id}/{video_name}_clip'
+    if not os.path.exists(extracted_dir):
+        print(f"Error: Directory {extracted_dir} does not exist.")
+        return
 
     # 클립 정보를 저장할 리스트
     video_path = []
 
-    for clip_folder in clip_folders:
-        video_name = clip_folder.replace('_clip', '')
-        clip_folder_path = os.path.join(extracted_dir, clip_folder)
+    for person_id in os.listdir(extracted_dir):
+        person_folder_path = os.path.join(extracted_dir, person_id)
 
-        for person_id in os.listdir(clip_folder_path):
-            person_folder_path = os.path.join(clip_folder_path, person_id)
+        if os.path.isdir(person_folder_path):
+            video_files = [vf for vf in os.listdir(person_folder_path) if vf.endswith('.mp4')]
 
-            if os.path.isdir(person_folder_path):
-                video_files = [vf for vf in os.listdir(person_folder_path) if vf.endswith('.mp4')]
-
-                for video_file in video_files:
-                    video_file_path = os.path.join(person_folder_path, video_file)
-                    video_start_time = get_video_start_time(video_name)  # 설정된 시작 시간
-                    if video_start_time is None:
-                        continue  # 시작 시간이 없는 경우 다음 파일로 이동
-                    person_id_number = person_id.replace('person_', '')  # 접두어 제거
-                    video_path_entry = {"file": video_file_path, "start_time": video_start_time, "person_id": person_id_number}
-                    video_path.append(video_path_entry)
+            for video_file in video_files:
+                video_file_path = os.path.join(person_folder_path, video_file)
+                video_start_time = get_video_start_time(video_name)  # 설정된 시작 시간
+                if video_start_time is None:
+                    continue  # 시작 시간이 없는 경우 다음 파일로 이동
+                person_id_number = person_id.replace('person_', '')  # 접두어 제거
+                video_path_entry = {"file": video_file_path, "start_time": video_start_time, "person_id": person_id_number}
+                video_path.append(video_path_entry)
 
     # 입력 비디오 파일 목록과 시작 시간 설정
     for vp in video_path:
@@ -186,6 +184,7 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
 
     # 클립 정보를 DB에 저장
     save_clips_to_db(clip_times, user_no, pro_video_id)
+
 
 def save_clips_to_db(clip_times, user_no, pro_video_id):
     connection = get_db_connection()
