@@ -295,13 +295,14 @@ def upload_file():
         print(f"Type: {type}")
 
         # user_id 기반으로 디렉토리 생성
-        user_video_path = os.path.join('uploaded_videos', str(user_id))
-        user_image_path = os.path.join('uploaded_images', str(user_id))
+        user_video_path = os.path.join(VIDEO_SAVE_PATH, str(user_id))
+        user_image_path = os.path.join(IMAGE_SAVE_PATH, str(user_id))
         os.makedirs(user_video_path, exist_ok=True)
         os.makedirs(user_image_path, exist_ok=True)
 
         # 데이터베이스 연결
         connection = get_db_connection()
+        video_names = []
         with connection.cursor() as cursor:
             # 비디오 데이터 처리
             video_data = data.get('video_data', [])
@@ -325,6 +326,7 @@ def upload_file():
                         VALUES (%s, %s, %s, %s)
                     """
                     cursor.execute(sql, (video_name, absolute_video_path, start_time, cam_name))
+                    video_names.append(video_name)
 
             # 이미지 데이터 처리
             image_data = data.get('image_data', {})
@@ -354,8 +356,7 @@ def upload_file():
         response.status_code = 200
 
         # 각 비디오 파일에 대해 비동기 처리 호출
-        for video in video_data:
-            video_name = video.get('video_name', '')
+        for video_name in video_names:
             video_base_name = os.path.splitext(video_name)[0]  # 확장자를 제거한 이름
             threading.Thread(target=process_video, args=(video_base_name, user_id)).start()
 
@@ -370,6 +371,7 @@ def upload_file():
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
         return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
+
 
 
 # 2.회원가입 엔드포인트(Post)
