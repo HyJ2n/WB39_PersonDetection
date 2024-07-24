@@ -226,7 +226,7 @@ def save_processed_video_info(video_name, user_id, user_no, or_video_id):
             connection.close()
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
-        
+
 # 얼굴 처리 함수
 def process_save_face_info(video_name, user_id, or_video_id):
     try:
@@ -379,8 +379,6 @@ def upload_file():
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
         return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
-
-
 
 # 2.회원가입 엔드포인트(Post)
 @app.route('/receive_data', methods=['POST'])
