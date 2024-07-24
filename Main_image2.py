@@ -145,7 +145,7 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path, ag
 
     v_cap = cv2.VideoCapture(video_path)
     frame_rate = int(v_cap.get(cv2.CAP_PROP_FPS))
-    frame_interval = 8  # 8프레임마다 처리
+    frame_interval = 6  # 8프레임마다 처리
 
     yolo_model = YOLO(yolo_model_path)
     gender_model = YOLO(gender_model_path)
