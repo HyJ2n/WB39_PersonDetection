@@ -25,6 +25,94 @@ IMAGE_SAVE_PATH = 'uploaded_images'
 os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 os.makedirs(IMAGE_SAVE_PATH, exist_ok=True)
 
+# 트리거처럼 동작하도록 처리 (새로운 클립 추가 시 호출)
+def update_person_face_from_clip(person_no):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            # person_no로 person_id 가져오기
+            sql = "SELECT person_id, pro_video_id FROM person WHERE person_no = %s"
+            cursor.execute(sql, (person_no,))
+            person_result = cursor.fetchone()
+            if not person_result:
+                print(f"No person_id found for person_no: {person_no}")
+                return
+
+            person_id = person_result['person_id']
+            pro_video_id = person_result['pro_video_id']
+            
+            # 원본 비디오 이름을 가져옴
+            sql = """
+                SELECT or_video_name 
+                FROM origin_video 
+                WHERE or_video_id = (
+                    SELECT or_video_id 
+                    FROM processed_video 
+                    WHERE pro_video_id = %s
+                )
+            """
+            cursor.execute(sql, (pro_video_id,))
+            or_video_name_result = cursor.fetchone()
+            if not or_video_name_result:
+                print(f"No or_video_name found for pro_video_id: {pro_video_id}")
+                return
+
+            or_video_name = or_video_name_result['or_video_name']
+            
+            # user_id를 가져옴
+            sql = "SELECT user_id FROM user WHERE user_no = (SELECT user_no FROM person WHERE person_no = %s)"
+            cursor.execute(sql, (person_no,))
+            user_result = cursor.fetchone()
+            if not user_result:
+                print(f"No user found for person_no: {person_no}")
+                return
+
+            user_id = user_result['user_id']
+
+             # 이미지 파일 경로 설정
+            person_image_dir = f'./extracted_images/{user_id}/{or_video_name}_clip/person_{person_id}/'
+            if not os.path.exists(person_image_dir):
+                print(f"Directory not found: {person_image_dir}")
+                return
+
+            # 디렉토리 내의 이미지 파일 찾기
+            face_files = [f for f in os.listdir(person_image_dir) if f.endswith('.jpg') or f.endswith('.png')]
+            if not face_files:
+                print(f"No image files found in directory: {person_image_dir}")
+                return
+            
+            # 첫 번째 이미지를 사용 (필요에 따라 다른 선택 방법 사용 가능)
+            face_name = face_files[0]
+
+            # 상대 경로로 저장
+            face_image_relative_path = os.path.join(person_image_dir, face_name)
+
+            # person_origin_face 업데이트
+            sql = "UPDATE person SET person_origin_face = %s WHERE person_no = %s"
+            cursor.execute(sql, (face_image_relative_path, person_no))
+            connection.commit()
+            print(f"Updated person_origin_face for person_no: {person_no} with {face_image_relative_path}")
+
+    except pymysql.MySQLError as e:
+        print(f"MySQL error occurred: {str(e)}")
+    finally:
+        connection.close()
+
+
+def get_user_id(user_no):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            sql = "SELECT user_id FROM user WHERE user_no = %s"
+            cursor.execute(sql, (user_no,))
+            result = cursor.fetchone()
+            return result['user_id'] if result else None
+    except pymysql.MySQLError as e:
+        print(f"MySQL error occurred: {str(e)}")
+        return None
+    finally:
+        connection.close()
+
 # user_id로 user_no 정보 가져오기
 def get_user_no(user_id):
     connection = get_db_connection()
@@ -131,6 +219,8 @@ def save_to_db(person_info, pro_video_id, user_no):
     finally:
         connection.close()
 
+
+
 # 클립 처리 함수
 def clip_video(video_name, user_id, or_video_id):
     try:
@@ -148,7 +238,15 @@ def clip_video(video_name, user_id, or_video_id):
                     print(f"Error occurred: {stderr.decode('utf-8')}")
                 else:
                     print("클립 추출 성공")
-            
+                    # 각 클립에 대해 update_person_face_from_clip 호출
+                    connection = get_db_connection()
+                    with connection.cursor() as cursor:
+                        sql = "SELECT person_no FROM clip WHERE person_no IN (SELECT person_no FROM person WHERE pro_video_id = %s)"
+                        cursor.execute(sql, (pro_video_id,))
+                        person_nos = cursor.fetchall()
+                        for person_no in person_nos:
+                            update_person_face_from_clip(person_no['person_no'])
+
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
 
@@ -269,7 +367,6 @@ def process_video(video_name, user_id):
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
-
 
 # 1.파일 업로드 엔드포인트(Post)
 @app.route('/upload_file', methods=['POST'])
@@ -490,6 +587,7 @@ def login():
 
                 person_sql = """
                     SELECT 
+                        person_no,
                         person_id,
                         pro_video_id,
                         person_age,
@@ -508,12 +606,12 @@ def login():
                 clip_sql = """
                     SELECT 
                         clip_id,
-                        person_id,
+                        person_no,
                         clip_video,
                         clip_location,
                         clip_time
                     FROM clip
-                    WHERE person_id IN (SELECT person_id FROM person WHERE user_no = %s)
+                    WHERE person_no IN (SELECT person_no FROM person WHERE user_no = %s)
                 """
                 cursor.execute(clip_sql, (user_no,))
                 clip_result = cursor.fetchall()
@@ -673,4 +771,3 @@ def upload_cameras():
 if __name__ == '__main__':
     print("Starting server")  # 서버 시작 디버깅 메시지
     app.run(host="0.0.0.0", port=5000, debug=True)
-
