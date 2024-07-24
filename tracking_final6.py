@@ -301,9 +301,10 @@ if __name__ == "__main__":
     try:
         user_id = sys.argv[2]
         video_directory = f"./uploaded_videos/{user_id}/"
-        known_face_paths = [
-            f"./uploaded_images/{user_id}/horyun.png"
-        ]
+        
+        # 이미지 디렉토리의 모든 이미지 파일 경로 읽기
+        image_directory = f"./uploaded_images/{user_id}/"
+        known_face_paths = [os.path.join(image_directory, img_file) for img_file in os.listdir(image_directory) if img_file.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
         output_directory = f"./extracted_images/{user_id}/"
         yolo_model_path = './models/yolov8x.pt'

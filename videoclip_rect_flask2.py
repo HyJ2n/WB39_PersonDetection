@@ -31,6 +31,23 @@ def get_video_start_time(file_label):
     finally:
         connection.close()
 
+def get_person_no(person_id, pro_video_id):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            sql = "SELECT person_no FROM person WHERE person_id = %s AND pro_video_id = %s"
+            cursor.execute(sql, (person_id, pro_video_id))
+            result = cursor.fetchone()
+            if result:
+                return result['person_no']
+            else:
+                raise ValueError(f"No person_no found for person_id: {person_id} and pro_video_id: {pro_video_id}")
+    except pymysql.MySQLError as e:
+        print(f"MySQL error occurred: {str(e)}")
+        return None
+    finally:
+        connection.close()
+
 # 클립 저장 경로 설정
 def process_clips(video_name, user_id, user_no, pro_video_id):
     output_clips_dir = f'./extracted_images/{user_id}/output_clips'
@@ -47,7 +64,7 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
     video_path = []
 
     for clip_folder in clip_folders:
-        clip_video_name = clip_folder.replace('_clip', '')
+        video_name = clip_folder.replace('_clip', '')
         clip_folder_path = os.path.join(extracted_dir, clip_folder)
 
         for person_id in os.listdir(clip_folder_path):
@@ -58,7 +75,7 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
 
                 for video_file in video_files:
                     video_file_path = os.path.join(person_folder_path, video_file)
-                    video_start_time = get_video_start_time(clip_video_name)  # 설정된 시작 시간
+                    video_start_time = get_video_start_time(video_name)  # 설정된 시작 시간
                     if video_start_time is None:
                         continue  # 시작 시간이 없는 경우 다음 파일로 이동
                     person_id_number = person_id.replace('person_', '')  # 접두어 제거
@@ -149,12 +166,12 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
     with open(os.path.join(output_clips_dir, 'clips_times.txt'), 'w') as f:
         for clip_info in clip_times:
             f.write(f"클립 파일: {clip_info['clip_file']}, 시작 시간: {clip_info['start_time']}, person_id: {clip_info['person_id']}\n")  # person_id 추가
-        
+
         # 비디오 파일 순서 추가
         f.write("\n비디오 파일 순서:\n")
         video_order_text = ",".join([clip_info['file_label'] for clip_info in clip_times])
         f.write(video_order_text)
-        
+
         # 요약된 이동 경로 순서 추가
         f.write("\n\n이동 경로:\n")
         f.write(",".join(video_order_path))
@@ -167,19 +184,20 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
     print("클립의 시간 정보가 clips_times.txt 파일로 저장되었습니다.")
 
     # 클립 정보를 DB에 저장
-    save_clips_to_db(clip_times, user_no)
+    save_clips_to_db(clip_times, user_no, pro_video_id)
 
-def save_clips_to_db(clip_times, user_no):
+def save_clips_to_db(clip_times, user_no, pro_video_id):
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
             for clip_info in clip_times:
+                person_no = get_person_no(clip_info['person_id'], pro_video_id)  # person_id와 pro_video_id로 person_no 가져오기
                 sql = """
-                    INSERT INTO clip (person_id, clip_video, clip_location, clip_time)
+                    INSERT INTO clip (person_no, clip_video, clip_location, clip_time)
                     VALUES (%s, %s, %s, %s)
                 """
                 cursor.execute(sql, (
-                    clip_info['person_id'],
+                    person_no,
                     clip_info['clip_file'],
                     'Location Placeholder',  # 임시 위치 정보
                     clip_info['start_time']

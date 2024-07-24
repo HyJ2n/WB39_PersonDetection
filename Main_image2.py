@@ -145,7 +145,7 @@ def process_video(video_path, output_dir, yolo_model_path, gender_model_path, ag
 
     v_cap = cv2.VideoCapture(video_path)
     frame_rate = int(v_cap.get(cv2.CAP_PROP_FPS))
-    frame_interval = 3  # 3프레임마다 처리
+    frame_interval = 8  # 8프레임마다 처리
 
     yolo_model = YOLO(yolo_model_path)
     gender_model = YOLO(gender_model_path)
@@ -187,7 +187,7 @@ if __name__ == "__main__":
         user_no = sys.argv[2]
         video_directory = f"./uploaded_videos/{user_no}/"
         video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
-        output_directory = "./extracted_images/"
+        output_directory = f"./extracted_images/{user_no}/"
         yolo_model_path = './models/yolov8x.pt'
         gender_model_path = './models/gender_model.pt'
         age_model_path = './models/age_best.pth'
