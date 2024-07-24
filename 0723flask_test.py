@@ -235,10 +235,11 @@ def process_save_face_info(video_name, user_id, or_video_id):
         else:
             print("정보 추출 성공")
             tracking_video(video_name, user_id, or_video_id)
-            clip_video(video_name, user_id, or_video_id)
+            clip_videos([video_name], user_id, [or_video_id])  # 수정된 부분: 리스트로 전달
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
+
 
 # 비디오 처리 함수
 def process_video(video_name, user_id):
