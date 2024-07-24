@@ -372,7 +372,6 @@ def upload_file():
         return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
 
 
-
 # 2.회원가입 엔드포인트(Post)
 @app.route('/receive_data', methods=['POST'])
 def receive_data():
