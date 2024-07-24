@@ -119,7 +119,8 @@ def process_clips(video_name, user_id, user_no, pro_video_id):
 
             if blue_pixel_count > 0:
                 if combined_writer is None:
-                    clip_filename = f'{file_label}_{clip_index}.mp4'
+                    # video_name을 포함한 클립 파일 이름 생성
+                    clip_filename = f'{video_name}_{file_label}_{clip_index}.mp4'
                     combined_clip_path = os.path.join(output_clips_dir, clip_filename)
                     combined_writer = cv2.VideoWriter(
                         combined_clip_path,
