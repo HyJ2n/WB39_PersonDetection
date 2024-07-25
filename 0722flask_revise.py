@@ -380,48 +380,37 @@ def process_video(video_name, user_id):
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
 
-# 1.파일 업로드 엔드포인트(Post)
+# 1. 파일 업로드 엔드포인트(Post)
 @app.route('/upload_file', methods=['POST'])
 def upload_file():
     try:
         data = request.get_json()
 
-        # JSON 데이터가 제대로 수신되지 않았을 경우 확인
         if not data:
             return jsonify({"status": "error", "message": "No JSON data received"}), 400
-        
-        # 수신된 데이터가 문자열이 아닌 JSON 객체인지 확인
-        if isinstance(data, str):
-            return jsonify({"status": "error", "message": "Invalid JSON data format"}), 400
 
-        # 유저 데이터 추출
         user_data = data.get('user_data', {})
         user_id = user_data.get('user_id', '')
 
-        # 필터링 데이터 추출
         filter_data = data.get('filter_data', {})
         age = filter_data.get('age', '')
         gender = filter_data.get('gender', '')
         color = filter_data.get('color', '')
         type = filter_data.get('type', '')
 
-        # 필터링 데이터 출력
         print(f"Age: {age}")
         print(f"Gender: {gender}")
         print(f"Color: {color}")
         print(f"Type: {type}")
 
-        # user_id 기반으로 디렉토리 생성
         user_video_path = os.path.join(VIDEO_SAVE_PATH, str(user_id))
         user_image_path = os.path.join(IMAGE_SAVE_PATH, str(user_id))
         os.makedirs(user_video_path, exist_ok=True)
         os.makedirs(user_image_path, exist_ok=True)
 
-        # 데이터베이스 연결
         connection = get_db_connection()
         video_names = []
         with connection.cursor() as cursor:
-            # 비디오 데이터 처리
             video_data = data.get('video_data', [])
             for video in video_data:
                 video_name = video.get('video_name', '')
@@ -432,20 +421,28 @@ def upload_file():
                 if video_name and video_content_base64:
                     video_content = base64.b64decode(video_content_base64)
                     video_path = os.path.join(user_video_path, video_name)
-                    absolute_video_path = os.path.abspath(video_path)  # 절대 경로로 변환
+                    absolute_video_path = os.path.abspath(video_path)
 
                     with open(absolute_video_path, 'wb') as video_file:
                         video_file.write(video_content)
 
-                    # 비디오 파일 이름과 절대 경로를 데이터베이스에 삽입
+                    # cam_name과 다른 필요한 정보를 이용해 cam_num 조회
+                    sql = "SELECT cam_num FROM camera WHERE cam_name = %s AND map_num = (SELECT map_num FROM map WHERE user_no = (SELECT user_no FROM user WHERE user_id = %s))"
+                    cursor.execute(sql, (cam_name, user_id))
+                    cam_result = cursor.fetchone()
+                    if not cam_result:
+                        print(f"No cam_num found for cam_name: {cam_name} and user_id: {user_id}")
+                        continue
+                    
+                    cam_num = cam_result['cam_num']
+
                     sql = """
-                        INSERT INTO origin_video (or_video_name, or_video_content, start_time, cam_name)
+                        INSERT INTO origin_video (or_video_name, or_video_content, start_time, cam_num)
                         VALUES (%s, %s, %s, %s)
                     """
-                    cursor.execute(sql, (video_name, absolute_video_path, start_time, cam_name))
+                    cursor.execute(sql, (video_name, absolute_video_path, start_time, cam_num))
                     video_names.append(video_name)
 
-            # 이미지 데이터 처리
             image_data = data.get('image_data', {})
             image_name = image_data.get('image_name', '')
             image_content_base64 = image_data.get('image_content', '')
@@ -453,28 +450,23 @@ def upload_file():
             if image_name and image_content_base64:
                 image_content = base64.b64decode(image_content_base64)
                 image_path = os.path.join(user_image_path, image_name)
-                absolute_image_path = os.path.abspath(image_path)  # 절대 경로로 변환
+                absolute_image_path = os.path.abspath(image_path)
 
                 with open(absolute_image_path, 'wb') as image_file:
                     image_file.write(image_content)
 
-                # 이미지 파일 경로를 출력
                 print(f"Image: {image_name}")
                 print(f"Image: {absolute_image_path}")
 
-            # 변경사항 커밋
             connection.commit()
 
-        # 연결 종료
         connection.close()
 
-        # 성공적으로 처리되었다는 응답 반환
         response = jsonify({"status": "success", "message": "Data received and processed successfully"})
         response.status_code = 200
 
-        # 각 비디오 파일에 대해 비동기 처리 호출
         for video_name in video_names:
-            video_base_name = os.path.splitext(video_name)[0]  # 확장자를 제거한 이름
+            video_base_name = os.path.splitext(video_name)[0]
             threading.Thread(target=process_video, args=(video_base_name, user_id)).start()
 
         return response
@@ -488,6 +480,7 @@ def upload_file():
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
         return jsonify({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}), 500
+
 
 # 2.회원가입 엔드포인트(Post)
 @app.route('/receive_data', methods=['POST'])
