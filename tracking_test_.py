@@ -16,6 +16,7 @@ class FaceRecognizer:
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
         self.tracked_faces = {}  # 트래킹 ID와 face_id를 매핑할 딕셔너리
         self.known_faces = set()  # 이미 트래킹 중인 face_id를 저장하는 집합
+        
 
     def extract_embeddings(self, image):
         boxes, probs = self.mtcnn.detect(image)
@@ -105,15 +106,29 @@ class FaceRecognizer:
             if track.track_id in tracked_faces:
                 face_id = tracked_faces[track.track_id]
                 id_text = f"face_id: {face_id}"
-
-                cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (0, 255, 0), 2)
+                                                                                                     # 특정객체 빨간색 
+                cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (0, 0, 255), 2)
 
     def recognize_faces(self, frame, frame_number, output_dir, known_faces, tracker, video_name, yolo_model, gender_model, age_model):
         original_shape = frame.shape[:2]
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        detect_faces = self.extract_embeddings(frame_rgb)
-        person_detections = self.detect_persons(frame, yolo_model)
+        
+        # 얼굴 인식을 건너뛸지 여부를 결정하는 플래그
+        skip_face_detection = False
+        
+        # 기존 트랙에서 이미 트래킹된 얼굴이 있는지 확인
+        for track_id, face_id in self.tracked_faces.items():
+            if track_id in [track.track_id for track in tracker.update_tracks([], frame=frame)]:
+                skip_face_detection = True
+                break
 
+        # 얼굴 인식을 건너뛰지 않는 경우에만 얼굴을 인식
+        if not skip_face_detection:
+            detect_faces = self.extract_embeddings(frame_rgb)
+        else:
+            detect_faces = []
+
+        person_detections = self.detect_persons(frame, yolo_model)
         results = []
         for (xmin, ymin, xmax, ymax) in person_detections:
             results.append([[xmin, ymin, xmax - xmin, ymax - ymin], 1.0, 0])
@@ -137,6 +152,7 @@ class FaceRecognizer:
             track_id = track.track_id
             ltrb = track.to_ltrb()
             track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
+            # cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 0, 0), 2)  # 파란색 박스
 
             bbox_area = (track_bbox[2] - track_bbox[0]) * (track_bbox[3] - track_bbox[1])
 
@@ -147,53 +163,38 @@ class FaceRecognizer:
                     del self.tracked_faces[track_id]
                 continue
 
-        for track in tracks:
-            if not track.is_confirmed():
-                continue
+            # 얼굴 인식은 tracked_faces에 없는 track_id에 대해서만 수행
+            if track_id not in self.tracked_faces:
+                for embedding, box in detect_faces:
+                    left, top, right, bottom = box
+                    face_center_x = (left + right) / 2
+                    face_center_y = (top + bottom) / 2
+                    
+                    center_box_left = face_center_x - (right - left) / 6
+                    center_box_top = face_center_y - (bottom - top) / 6
+                    center_box_right = face_center_x + (right - left) / 6
+                    center_box_bottom = face_center_y + (bottom - top) / 6
 
-            track_id = track.track_id
-            ltrb = track.to_ltrb()
-            track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
-
-            for other_track in tracks:
-                if other_track.track_id != track_id:
-                    other_ltrb = other_track.to_ltrb()
-                    other_track_bbox = (int(other_ltrb[0]), int(other_ltrb[1]), int(other_ltrb[2]), int(other_ltrb[3]))
-
-                    iou, overlap_coords = self.calculate_iou(track_bbox, other_track_bbox)
-                    overlap_area = (overlap_coords[2] - overlap_coords[0]) * (overlap_coords[3] - overlap_coords[1])
-                    track_area = (track_bbox[2] - track_bbox[0]) * (track_bbox[3] - track_bbox[1])
-
-                    if overlap_area / track_area >= 0.8:
-                        overlapping_track_ids.add(track_id)
-                        overlapping_track_ids.add(other_track.track_id)
-                        break
-
-            if track_id in overlapping_track_ids:
-                continue
-
-            for embedding, box in detect_faces:
-                left, top, right, bottom = box
-                face_center_x = (left + right) / 2
-                face_center_y = (top + bottom) / 2
-
-                center_box_left = face_center_x - (right - left) / 6
-                center_box_top = face_center_y - (bottom - top) / 6
-                center_box_right = face_center_x + (right - left) / 6
-                center_box_bottom = face_center_y + (bottom - top) / 6
-                if (track_bbox[0] <= center_box_left <= track_bbox[2] or track_bbox[0] <= center_box_right <= track_bbox[2]) and \
-                   (track_bbox[1] <= center_box_top <= track_bbox[3] or track_bbox[1] <= center_box_bottom <= track_bbox[3]):
-                    face_id = self.assign_face_id(embedding, known_faces)
-                    if face_id is not None:
-                        if face_id in self.known_faces:
-                            continue
-                        self.tracked_faces[track_id] = face_id
-                        self.known_faces.add(face_id)
-                    break
-
+                    # 트랙 박스와 얼굴 중심 박스의 교차 여부 확인
+                    if (track_bbox[0] <= center_box_left <= track_bbox[2] or track_bbox[0] <= center_box_right <= track_bbox[2]) and \
+                    (track_bbox[1] <= center_box_top <= track_bbox[3] or track_bbox[1] <= center_box_bottom <= track_bbox[3]):
+                        face_id = self.assign_face_id(embedding, known_faces)  # 얼굴 임베딩을 사용해 face_id 할당
+                        if face_id is not None:
+                            if face_id in self.known_faces:
+                                # 이미 인식된 얼굴의 경우 빨간색 박스로 표시
+                                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+                                continue
+                            # 새로운 얼굴을 인식한 경우 tracked_faces에 track_id와 face_id 매핑 추가
+                            self.tracked_faces[track_id] = face_id
+                            # known_faces에 face_id 추가
+                            self.known_faces.add(face_id)
+                        break  # 매핑이 완료되면 루프 종료
+                
         self.draw_bounding_boxes(frame, tracks, self.tracked_faces)
 
         return frame
+
+
 
 def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, person_id, target_fps=10, max_age=30, n_init=3, nn_budget=60):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -229,7 +230,7 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
 
         if frame_number % frame_interval != 0:
             continue
-
+        
         frame = recognizer.recognize_faces(frame, frame_number, output_dir, known_faces, tracker, video_name, yolo_model, gender_model, age_model)
 
         if frame_width is None or frame_height is None:
@@ -243,10 +244,17 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
         if person_id in video_writer:
             video_writer[person_id].write(frame)
 
+        cv2.imshow('Processed Frame', frame)
+
+        # 'q' 키를 누르면 종료
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
     v_cap.release()
     for writer in video_writer.values():
         writer.release()
     cv2.destroyAllWindows()
+
 
 def process_videos(video_directory, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, target_fps=10):
     video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
