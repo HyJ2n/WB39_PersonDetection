@@ -1,4 +1,3 @@
-# maintain for previous track rect
 import cv2
 import sys
 import os
@@ -97,19 +96,45 @@ class FaceRecognizer:
         return person_detections
 
     def draw_bounding_boxes(self, frame, tracks, tracked_faces):
+        for track in tracks:
+            if not track.is_confirmed():
+                continue
+
+            ltrb = track.to_ltrb()
+            track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
+
+            if track.track_id in tracked_faces:
+                face_id = tracked_faces[track.track_id]
+                id_text = f"face_id: {face_id}"
+                cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (0, 0, 255), 2)
+                # Update previous_tracks with the latest track data
+                self.previous_tracks[track.track_id] = track_bbox
+
+        # Draw previous tracks for the frames where no new tracking is done
         for track_id, bbox in self.previous_tracks.items():
             if track_id in tracked_faces:
-                face_id = tracked_faces[track_id]
-                id_text = f"face_id: {face_id}"
-                cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
-                #cv2.putText(frame, id_text, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 0, 255), 2)
 
     def recognize_faces(self, frame, frame_number, output_dir, known_faces, tracker, video_name, yolo_model, gender_model, age_model):
         original_shape = frame.shape[:2]
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        detect_faces = self.extract_embeddings(frame_rgb)
-        person_detections = self.detect_persons(frame, yolo_model)
+        
+        # 얼굴 인식을 건너뛸지 여부를 결정하는 플래그
+        skip_face_detection = False
+        
+        # 기존 트랙에서 이미 트래킹된 얼굴이 있는지 확인
+        for track_id, face_id in self.tracked_faces.items():
+            if track_id in [track.track_id for track in tracker.update_tracks([], frame=frame)]:
+                skip_face_detection = True
+                break
 
+        # 얼굴 인식을 건너뛰지 않는 경우에만 얼굴을 인식
+        if not skip_face_detection:
+            detect_faces = self.extract_embeddings(frame_rgb)
+        else:
+            detect_faces = []
+
+        person_detections = self.detect_persons(frame, yolo_model)
         results = []
         for (xmin, ymin, xmax, ymax) in person_detections:
             results.append([[xmin, ymin, xmax - xmin, ymax - ymin], 1.0, 0])
@@ -133,6 +158,7 @@ class FaceRecognizer:
             track_id = track.track_id
             ltrb = track.to_ltrb()
             track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
+            # cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 0, 0), 2)  # 파란색 박스
 
             bbox_area = (track_bbox[2] - track_bbox[0]) * (track_bbox[3] - track_bbox[1])
 
@@ -142,14 +168,6 @@ class FaceRecognizer:
                         self.known_faces.remove(self.tracked_faces[track_id])
                     del self.tracked_faces[track_id]
                 continue
-
-        for track in tracks:
-            if not track.is_confirmed():
-                continue
-
-            track_id = track.track_id
-            ltrb = track.to_ltrb()
-            track_bbox = (int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3]))
 
             for other_track in tracks:
                 if other_track.track_id != track_id:
@@ -164,37 +182,50 @@ class FaceRecognizer:
                         overlapping_track_ids.add(track_id)
                         overlapping_track_ids.add(other_track.track_id)
                         break
+            
+            # 얼굴 인식은 tracked_faces에 없는 track_id에 대해서만 수행
+            if track_id not in self.tracked_faces:
+                for embedding, box in detect_faces:
+                    left, top, right, bottom = box
+                    face_center_x = (left + right) / 2
+                    face_center_y = (top + bottom) / 2
+                    
+                    center_box_left = face_center_x - (right - left) / 6
+                    center_box_top = face_center_y - (bottom - top) / 6
+                    center_box_right = face_center_x + (right - left) / 6
+                    center_box_bottom = face_center_y + (bottom - top) / 6
 
-            if track_id in overlapping_track_ids:
-                continue
-
-            for embedding, box in detect_faces:
-                left, top, right, bottom = box
-                face_center_x = (left + right) / 2
-                face_center_y = (top + bottom) / 2
-
-                center_box_left = face_center_x - (right - left) / 6
-                center_box_top = face_center_y - (bottom - top) / 6
-                center_box_right = face_center_x + (right - left) / 6
-                center_box_bottom = face_center_y + (bottom - top) / 6
-                if (track_bbox[0] <= center_box_left <= track_bbox[2] or track_bbox[0] <= center_box_right <= track_bbox[2]) and \
-                   (track_bbox[1] <= center_box_top <= track_bbox[3] or track_bbox[1] <= center_box_bottom <= track_bbox[3]):
-                    face_id = self.assign_face_id(embedding, known_faces)
-                    if face_id is not None:
-                        if face_id in self.known_faces:
-                            continue
-                        self.tracked_faces[track_id] = face_id
-                        self.known_faces.add(face_id)
-                    break
-
-            # 현재 트랙 정보를 previous_tracks에 저장
-            self.previous_tracks[track_id] = track_bbox
-
+                    # 트랙 박스와 얼굴 중심 박스의 교차 여부 확인
+                    if (track_bbox[0] <= center_box_left <= track_bbox[2] or track_bbox[0] <= center_box_right <= track_bbox[2]) and \
+                    (track_bbox[1] <= center_box_top <= track_bbox[3] or track_bbox[1] <= center_box_bottom <= track_bbox[3]):
+                        face_id = self.assign_face_id(embedding, known_faces)  # 얼굴 임베딩을 사용해 face_id 할당
+                        if face_id is not None:
+                            if face_id in self.known_faces:
+                                # 이미 인식된 얼굴의 경우 빨간색 박스로 표시
+                                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+                                continue
+                            # 새로운 얼굴을 인식한 경우 tracked_faces에 track_id와 face_id 매핑 추가
+                            self.tracked_faces[track_id] = face_id
+                            # known_faces에 face_id 추가
+                            self.known_faces.add(face_id)
+                        break  # 매핑이 완료되면 루프 종료
+                    self.previous_tracks[track_id] = track_bbox
+                
         self.draw_bounding_boxes(frame, tracks, self.tracked_faces)
 
         return frame
 
-def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, person_id, interval=3, target_fps=1, max_age=5, n_init=3, nn_budget=5):
+def calculate_tracking_parameters(interval):
+    """ interval에 따른 max_age와 nn_budget을 계산하는 함수 """
+    base_max_age = 5
+    base_nn_budget = 5
+    
+    max_age = base_max_age + int(interval / 10)
+    nn_budget = base_nn_budget + int(interval / 10)
+    
+    return max_age, nn_budget
+
+def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, person_id, target_fps=10, max_age=30, n_init=3, nn_budget=60):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     recognizer = FaceRecognizer()
 
@@ -205,7 +236,7 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
 
     frame_rate = int(v_cap.get(cv2.CAP_PROP_FPS))
     frame_width, frame_height = None, None
-    video_writer = None
+    video_writer = {}
 
     known_faces = recognizer.load_known_faces(known_face_paths)
     yolo_model = YOLO(yolo_model_path)
@@ -215,6 +246,7 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
     age_model = age_model.to(device)
     age_model.eval()
 
+    max_age, nn_budget = calculate_tracking_parameters(interval)
     tracker = DeepSort(max_age=max_age, n_init=n_init, nn_budget=nn_budget)
 
     frame_number = 0
@@ -225,9 +257,9 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
             break
         frame_number += 1
 
-        # 매 interval 번째 프레임만 처리
         if frame_number % interval == 0:
             frame = recognizer.recognize_faces(frame, frame_number, output_dir, known_faces, tracker, video_name, yolo_model, gender_model, age_model)
+
         else:
             # 이전 트랙 정보를 사용해 bounding box 그리기
             recognizer.draw_bounding_boxes(frame, [], recognizer.tracked_faces)
@@ -237,25 +269,25 @@ def process_video(video_path, output_dir, known_face_paths, yolo_model_path, gen
             output_person_folder = os.path.join(output_dir, f"{video_name}_clip", person_id)
             os.makedirs(output_person_folder, exist_ok=True)
             output_video_path = os.path.join(output_person_folder, f"{person_id}_output.mp4")
-            video_writer = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), frame_rate, (frame_width, frame_height))
+            if person_id not in video_writer:
+                video_writer[person_id] = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), frame_rate, (frame_width, frame_height))
 
-        if video_writer:
-            video_writer.write(frame)
+        if person_id in video_writer:
+            video_writer[person_id].write(frame)
 
-        # 현재 프레임을 화면에 표시
-        # cv2.imshow('Processed Frame', frame)
+        #cv2.imshow('Processed Frame', frame)
 
         # 'q' 키를 누르면 종료
-        # if cv2.waitKey(1) & 0xFF == ord('q'):
-            # break
+        #if cv2.waitKey(1) & 0xFF == ord('q'):
+            #break
 
     v_cap.release()
-    if video_writer:
-        video_writer.release()
+    for writer in video_writer.values():
+        writer.release()
     cv2.destroyAllWindows()
 
 
-def process_videos(video_directory, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, interval=3, target_fps=10):
+def process_videos(video_directory, output_dir, known_face_paths, yolo_model_path, gender_model_path, age_model_path, interval, target_fps=1):
     video_paths = [os.path.join(video_directory, file) for file in os.listdir(video_directory) if file.endswith(('.mp4', '.avi', '.mov'))]
     
     target_recognizer = FaceRecognizer()
@@ -288,7 +320,7 @@ def process_videos(video_directory, output_dir, known_face_paths, yolo_model_pat
 if __name__ == "__main__":
     try:
         # 스크립트 실행에 필요한 경로 및 파일 설정
-        user_id = 'qqww'  # 사용자의 ID를 설정하세요.
+        user_id = 'fps1'  # 사용자의 ID를 설정하세요.
         video_directory = f"./uploaded_videos/{user_id}/"
         image_directory = f"./uploaded_images/{user_id}/"
         output_directory = f"./extracted_images/{user_id}/"
