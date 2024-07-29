@@ -266,7 +266,7 @@ def clip_video(video_name, user_id, or_video_id):
 def tracking_video(video_name, user_id, or_video_id):
     try:
         process = subprocess.Popen(
-            ["python", "tracking_final6_revise.py", video_name, str(user_id)], 
+            ["python", "tracking_final6_revise2.py", video_name, str(user_id)], 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = process.communicate()
@@ -338,7 +338,7 @@ def save_processed_video_info(video_name, user_id, user_no, or_video_id):
         print(f"An unexpected error occurred: {str(e)}")
 
 # 얼굴 처리 함수
-def process_save_face_info(video_name, user_id, or_video_id):
+def process_save_face_info(video_name, user_id, or_video_id, clip_flag=True):
     try:
         # save_face_info6.py 스크립트 호출 (백그라운드 실행)
         process = subprocess.Popen(
@@ -352,17 +352,18 @@ def process_save_face_info(video_name, user_id, or_video_id):
         else:
             print("정보 추출 성공")
             tracking_video(video_name, user_id, or_video_id)
-            clip_video(video_name, user_id, or_video_id)
+            if clip_flag:
+                clip_video(video_name, user_id, or_video_id)
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
 
 # 비디오 처리 함수
-def process_video(video_name, user_id):
+def process_video(video_name, user_id, clip_flag=True):
     try:
         # Main_image2.py 스크립트 호출 (백그라운드 실행)
         process = subprocess.Popen(
-            ["python", "Main_image2.py", video_name, str(user_id)], 
+            ["python", "Main_image.py", video_name, str(user_id)], 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = process.communicate()
@@ -375,7 +376,7 @@ def process_video(video_name, user_id):
             video_path = os.path.join('uploaded_videos', user_id, video_name + ".mp4")  # 파일 절대 경로로 변경
             or_video_id = get_or_video_id_by_path(video_path)
             if or_video_id is not None:
-                process_save_face_info(video_name, user_id, or_video_id)
+                process_save_face_info(video_name, user_id, or_video_id, clip_flag)
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
@@ -397,6 +398,8 @@ def upload_file():
         gender = filter_data.get('gender', '')
         color = filter_data.get('color', '')
         type = filter_data.get('type', '')
+
+        clip_flag = request.form.get('clip_flag', 'true').lower() != 'false'
 
         print(f"Age: {age}")
         print(f"Gender: {gender}")
@@ -467,7 +470,7 @@ def upload_file():
 
         for video_name in video_names:
             video_base_name = os.path.splitext(video_name)[0]
-            threading.Thread(target=process_video, args=(video_base_name, user_id)).start()
+            threading.Thread(target=process_video, args=(video_base_name, user_id, clip_flag)).start()
 
         return response
 

@@ -84,6 +84,7 @@ def save_best_faces(image_files, output_folder):
 if __name__ == "__main__":
     try:
         user_id = sys.argv[2]
+        #user_id = "1442"
         output_directory = f"./extracted_images/{user_id}/"
         os.makedirs(output_directory, exist_ok=True)  # 디렉토리를 미리 생성합니다.
 
